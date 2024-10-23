@@ -1,15 +1,14 @@
-use core::str;
 use rand::Rng;
 
 use std::{
-    io::{Read, Write},
+    io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
 };
 
 mod message;
 
 fn respond(mut stream: TcpStream) {
-    let mut end_of_conversation = false;
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
 
     let random = rand::thread_rng().gen_range(1..=100);
     let mut everyone_is_welcome = message::Message::new(message::MessageType::ConnectionAccepted);
@@ -24,44 +23,35 @@ fn respond(mut stream: TcpStream) {
     stream.flush().unwrap();
 
     loop {
-        let mut buffer = [0; 1024];
         let mut message = String::new();
+        let bytes_read = reader.read_line(&mut message).unwrap();
 
-        loop {
-            let bytes_read = stream.read(&mut buffer).unwrap();
+        if bytes_read > 0 {
+            let request = message.trim();
 
-            if bytes_read == 0 {
+            let (response, end_of_conversation) = match request {
+                "q" => {
+                    let mut message =
+                        message::Message::new(message::MessageType::ConnectionRejected);
+                    message.push(format!(
+                        "End of connection for the client with id={random}\n"
+                    ));
+                    (message, true)
+                }
+                _ => {
+                    let mut message = message::Message::new(message::MessageType::StubMessage);
+                    message.push("Just keeping the conversation going\n");
+                    (message, false)
+                }
+            };
+
+            stream.write_all(&response.as_bytes()).unwrap();
+            stream.flush().unwrap();
+
+            if end_of_conversation {
                 break;
             }
-
-            message.push_str(&str::from_utf8(&buffer[..bytes_read]).unwrap());
-
-            if message.ends_with("\n") {
-                break;
-            }
-        }
-        let request = message.trim();
-
-        let response = match request {
-            "q" => {
-                end_of_conversation = true;
-                let mut message = message::Message::new(message::MessageType::ConnectionRejected);
-                message.push(format!(
-                    "End of connection for the client with id={random}\n"
-                ));
-                message
-            }
-            _ => {
-                let mut message = message::Message::new(message::MessageType::StubMessage);
-                message.push("Just keeping the conversation going\n");
-                message
-            }
-        };
-
-        stream.write_all(&response.as_bytes()).unwrap();
-        stream.flush().unwrap();
-
-        if end_of_conversation {
+        } else {
             break;
         }
     }
