@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[repr(u32)] // Ensure that the enum is represented as an u32
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
@@ -21,40 +21,15 @@ impl From<u32> for MessageType {
     }
 }
 
-impl Into<u32> for MessageType {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-
-pub struct MessageHeader {
-    message_type: u32,
-    length: u32,
-}
-
-impl MessageHeader {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(std::mem::size_of::<Self>());
-
-        bytes.extend(&self.message_type.to_be_bytes());
-        bytes.extend(&self.length.to_be_bytes());
-
-        bytes
-    }
-}
-
 pub struct Message {
-    header: MessageHeader,
+    message_type: MessageType,
     data: Vec<u8>,
 }
 
 impl Message {
     pub fn new(message_type: MessageType) -> Self {
         Message {
-            header: MessageHeader {
-                message_type: message_type.into(),
-                length: 0,
-            },
+            message_type: message_type,
             data: Vec::new(),
         }
     }
@@ -64,7 +39,6 @@ impl Message {
         T: serde::Serialize,
     {
         self.data.extend(bincode::serialize(&data).unwrap());
-        self.header.length = self.data.len() as u32;
         self
     }
 
@@ -72,7 +46,7 @@ impl Message {
     where
         T: serde::de::DeserializeOwned,
     {
-        let last_length = self.header.length as usize;
+        let last_length = self.data.len();
 
         let size_of_t = std::mem::size_of::<T>();
         if last_length < size_of_t {
@@ -87,7 +61,6 @@ impl Message {
         match bincode::deserialize(temp_data) {
             Ok(data) => {
                 self.data.truncate(start_index); // Remove the last T-sized portion
-                self.header.length -= size_of_t as u32; // Update the header length
 
                 Some(data)
             }
@@ -96,7 +69,15 @@ impl Message {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.header.as_bytes();
+        let int_length = self.data.len() as u32;
+        let mut bytes = Vec::with_capacity(
+            std::mem::size_of_val(&self.message_type)
+                + std::mem::size_of_val(&int_length)
+                + self.data.len(),
+        );
+        bytes.extend(&(self.message_type as u32).to_be_bytes());
+        bytes.extend(&int_length.to_be_bytes());
+
         bytes.extend(&self.data);
         bytes
     }
