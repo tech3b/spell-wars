@@ -1,3 +1,5 @@
+use std::{u8, usize};
+
 use serde::{Deserialize, Serialize};
 
 #[repr(u32)] // Ensure that the enum is represented as an u32
@@ -29,7 +31,7 @@ pub struct Message {
 impl Message {
     pub fn new(message_type: MessageType) -> Self {
         Message {
-            message_type: message_type,
+            message_type,
             data: Vec::new(),
         }
     }
@@ -80,5 +82,33 @@ impl Message {
 
         bytes.extend(&self.data);
         bytes
+    }
+
+    // TODO: read a list of messages until Vec is exhausted
+    pub fn from_bytes(message_bytes: Vec<u8>) -> Option<Message> {
+        let length_field_length = std::mem::size_of::<u32>();
+        let message_type_length = std::mem::size_of::<MessageType>();
+        let start_of_data = message_type_length + length_field_length;
+
+        if message_bytes.len() < start_of_data {
+            return None;
+        }
+
+        let message_type = MessageType::from(u32::from_be_bytes(
+            message_bytes[..message_type_length]
+                .try_into()
+                .expect("Expected an array slice of size 4 with the message type"),
+        ));
+        let data_length = u32::from_be_bytes(
+            message_bytes[message_type_length..length_field_length]
+                .try_into()
+                .expect("Expected an array slice of size 4 with the data length"),
+        ) as usize;
+
+        let mut message = Message::new(message_type);
+        message
+            .data
+            .copy_from_slice(&message_bytes[start_of_data..start_of_data + data_length]);
+        Some(message)
     }
 }
