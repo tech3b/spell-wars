@@ -1,60 +1,67 @@
 use rand::Rng;
 
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::Write,
     net::{TcpListener, TcpStream},
 };
 
 mod message;
 
 fn respond(mut stream: TcpStream) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut writing_stream = stream.try_clone().unwrap();
 
     let random = rand::thread_rng().gen_range(1..=100);
     let mut everyone_is_welcome = message::Message::new(message::MessageType::ConnectionAccepted);
 
-    stream
+    writing_stream
         .write_all(
             &everyone_is_welcome
                 .push(format!("Welcome! You're our {random} customer today!\n"))
                 .as_bytes(),
         )
         .unwrap();
-    stream.flush().unwrap();
+    writing_stream.flush().unwrap();
 
-    loop {
-        let mut message = String::new();
-        let bytes_read = reader.read_line(&mut message).unwrap();
+    for message_result in message_iterator(&mut stream) {
+        match message_result {
+            Ok(mut message) => {
+                let maybe_request: Option<String> = message.pop();
 
-        if bytes_read > 0 {
-            let request = message.trim();
+                if let Some(request) = maybe_request {
+                    let (response, end_of_conversation) = match request.as_str() {
+                        "q" => {
+                            let mut message =
+                                message::Message::new(message::MessageType::ConnectionRejected);
+                            message.push(format!(
+                                "End of connection for the client with id={random}\n"
+                            ));
+                            (message, true)
+                        }
+                        _ => {
+                            let mut message =
+                                message::Message::new(message::MessageType::StubMessage);
+                            message.push("Just keeping the conversation going\n");
+                            (message, false)
+                        }
+                    };
 
-            let (response, end_of_conversation) = match request {
-                "q" => {
-                    let mut message =
-                        message::Message::new(message::MessageType::ConnectionRejected);
-                    message.push(format!(
-                        "End of connection for the client with id={random}\n"
-                    ));
-                    (message, true)
+                    writing_stream.write_all(&response.as_bytes()).unwrap();
+                    writing_stream.flush().unwrap();
+
+                    if end_of_conversation {
+                        break;
+                    }
                 }
-                _ => {
-                    let mut message = message::Message::new(message::MessageType::StubMessage);
-                    message.push("Just keeping the conversation going\n");
-                    (message, false)
-                }
-            };
-
-            stream.write_all(&response.as_bytes()).unwrap();
-            stream.flush().unwrap();
-
-            if end_of_conversation {
-                break;
             }
-        } else {
-            break;
+            Err(err) => {
+                panic!("{err}")
+            }
         }
     }
+}
+
+fn message_iterator<'a>(reader: &'a mut TcpStream) -> message::MessageIterator<'a, TcpStream> {
+    message::MessageIterator { reader }
 }
 
 fn main() {

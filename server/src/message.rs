@@ -1,4 +1,7 @@
-use std::{u8, usize};
+use std::{
+    io::{ErrorKind, Read},
+    u8, usize,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -83,32 +86,42 @@ impl Message {
         bytes.extend(&self.data);
         bytes
     }
+}
 
-    // TODO: read a list of messages until Vec is exhausted
-    pub fn from_bytes(message_bytes: Vec<u8>) -> Option<Message> {
-        let length_field_length = std::mem::size_of::<u32>();
-        let message_type_length = std::mem::size_of::<MessageType>();
-        let start_of_data = message_type_length + length_field_length;
+pub struct MessageIterator<'a, R: Read> {
+    pub reader: &'a mut R,
+}
 
-        if message_bytes.len() < start_of_data {
-            return None;
+impl<'a, R: Read> MessageIterator<'a, R> {
+    fn next_message(&mut self) -> std::io::Result<Message> {
+        let mut message_type_buf = [0u8; std::mem::size_of::<MessageType>()];
+        self.reader.read_exact(&mut message_type_buf)?;
+        let message_type = MessageType::from(u32::from_be_bytes(message_type_buf));
+
+        let mut length_buf = [0u8; std::mem::size_of::<u32>()];
+        self.reader.read_exact(&mut length_buf)?;
+        let message_length = u32::from_be_bytes(length_buf) as usize;
+
+        let mut data = vec![0u8; message_length];
+        self.reader.read_exact(&mut data)?;
+
+        Ok(Message { message_type, data })
+    }
+}
+
+impl<'a, R: Read> Iterator for MessageIterator<'a, R> {
+    type Item = std::io::Result<Message>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_message() {
+            Ok(message) => Some(Ok(message)),
+            Err(e) => {
+                if e.kind() == ErrorKind::UnexpectedEof {
+                    None
+                } else {
+                    Some(Err(e))
+                }
+            }
         }
-
-        let message_type = MessageType::from(u32::from_be_bytes(
-            message_bytes[..message_type_length]
-                .try_into()
-                .expect("Expected an array slice of size 4 with the message type"),
-        ));
-        let data_length = u32::from_be_bytes(
-            message_bytes[message_type_length..length_field_length]
-                .try_into()
-                .expect("Expected an array slice of size 4 with the data length"),
-        ) as usize;
-
-        let mut message = Message::new(message_type);
-        message
-            .data
-            .copy_from_slice(&message_bytes[start_of_data..start_of_data + data_length]);
-        Some(message)
     }
 }
