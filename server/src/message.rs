@@ -1,5 +1,6 @@
+use core::str;
 use std::{
-    io::{ErrorKind, Read},
+    io::{ErrorKind, Read, Write},
     u8, usize,
 };
 
@@ -32,11 +33,21 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn message_type(&self) -> MessageType {
+        self.message_type
+    }
+
     pub fn new(message_type: MessageType) -> Self {
         Message {
             message_type,
             data: Vec::new(),
         }
+    }
+
+    pub fn push_string(&mut self, data: &str) -> &mut Message
+    {
+        self.data.extend(data.as_bytes());
+        self
     }
 
     pub fn push<T>(&mut self, data: T) -> &mut Message
@@ -45,6 +56,12 @@ impl Message {
     {
         self.data.extend(bincode::serialize(&data).unwrap());
         self
+    }
+
+    pub fn pop_string(&mut self) -> String {
+        let result = str::from_utf8(&self.data).unwrap().to_string();
+        self.data.clear();
+        result
     }
 
     pub fn pop<T>(&mut self) -> Option<T>
@@ -73,18 +90,10 @@ impl Message {
         }
     }
 
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let int_length = self.data.len() as u32;
-        let mut bytes = Vec::with_capacity(
-            std::mem::size_of_val(&self.message_type)
-                + std::mem::size_of_val(&int_length)
-                + self.data.len(),
-        );
-        bytes.extend(&(self.message_type as u32).to_be_bytes());
-        bytes.extend(&int_length.to_be_bytes());
-
-        bytes.extend(&self.data);
-        bytes
+    pub fn write_to<T: Write>(&self, writer: &mut T) -> std::io::Result<()> {
+        writer.write_all(&(self.message_type as u32).to_be_bytes())?;
+        writer.write_all(&(self.data.len() as u32).to_be_bytes())?;
+        writer.write_all(&self.data)
     }
 }
 
