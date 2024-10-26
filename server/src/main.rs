@@ -1,58 +1,62 @@
-use core::str;
 use rand::Rng;
+
 use std::{
-    io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    io::Write,
+    net::{TcpListener, TcpStream}, thread, time::Duration,
 };
 
+mod message;
+
 fn respond(mut stream: TcpStream) {
-    let mut end_of_conversation = false;
+    let mut writing_stream = stream.try_clone().unwrap();
 
-    loop {
-        let mut buffer = [0; 1024];
-        let mut message = String::new();
+    for message_result in message_iterator(&mut stream) {
+        match message_result {
+            Ok(mut message) => match message.message_type() {
+                message::MessageType::ConnectionRequested => {
+                    let random = rand::thread_rng().gen_range(1..=100);
+                    let mut everyone_is_welcome =
+                        message::Message::new(message::MessageType::ConnectionAccepted);
 
-        loop {
-            let bytes_read = stream.read(&mut buffer).unwrap();
+                    everyone_is_welcome
+                        .push_string(&format!("Welcome! You're our {random} customer today!"))
+                        .write_to(&mut writing_stream)
+                        .unwrap();
+                    writing_stream.flush().unwrap();
 
-            if bytes_read == 0 {
-                break;
-            }
+                    let mut stub_message = message::Message::new(message::MessageType::StubMessage);
 
-            message.push_str(&str::from_utf8(&buffer[..bytes_read]).unwrap());
-
-            if message.ends_with("\n") {
-                break;
-            }
-        }
-        let request = message.trim();
-
-        let response = match request {
-            "ALLOU?" => "psssht pssssht nichego ne slyshno\n",
-            "ALLOU YOBA ETO TI?" => "YOBI NET DOMA\n",
-            "YOBI POZOVITE POZHALUSTA" => "YOBA ETO TI!\n",
-            "KLADU TRUBKU" => {
-                end_of_conversation = true;
-                "NU I POZHALUSTA!\n"
-            }
-            _ => {
-                let random = rand::thread_rng().gen_range(1..=2);
-
-                if random % 2 == 0 {
-                    "psssht JA TEBE POMOLCHY SHENOK!\n"
-                } else {
-                    "ESHE RAZ POZVONISH - S POLITSIEY BUDESH RAZGOVARIVAT!\n"
+                    stub_message
+                        .push_string(&format!("Yoba, eto ti?"))
+                        .write_to(&mut writing_stream)
+                        .unwrap();
+                    writing_stream.flush().unwrap();
                 }
+                message::MessageType::StubMessage => {
+                    let maybe_request: String = message.pop_string();
+                    println!("stub message got: {maybe_request}");
+
+                    thread::sleep(Duration::from_secs(2));
+
+                    let mut stub_message = message::Message::new(message::MessageType::StubMessage);
+
+                    stub_message
+                        .push_string(&format!("Yoba, eto ti?"))
+                        .write_to(&mut writing_stream)
+                        .unwrap();
+                    writing_stream.flush().unwrap();
+                }
+                _ => todo!(),
+            },
+            Err(err) => {
+                panic!("{err}")
             }
-        };
-
-        stream.write_all(response.as_bytes()).unwrap();
-        stream.flush().unwrap();
-
-        if end_of_conversation {
-            break;
         }
     }
+}
+
+fn message_iterator<'a>(reader: &'a mut TcpStream) -> message::MessageIterator<'a, TcpStream> {
+    message::MessageIterator { reader }
 }
 
 fn main() {
