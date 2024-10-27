@@ -30,7 +30,6 @@ public:
     
     Message(Message&& other) noexcept 
         : messageType(other.messageType), data(std::move(other.data)) {
-        std::cout<< "moving"<< std::endl;
     }
 
     MessageType type() {
@@ -64,6 +63,11 @@ public:
                           boost::endian::native_to_big(static_cast<uint32_t>(data.size())));
     }
 
+    friend Message& operator<<(Message& msg, const std::string& input) {
+        msg.data.insert(msg.data.end(), input.begin(), input.end());
+        return msg << (uint32_t)input.length();
+    }
+
     template<typename DataType>
     friend Message& operator << (Message& msg, const DataType& data) {
         // Check that the type of the data being pushed is trivially copyable
@@ -82,15 +86,35 @@ public:
         return msg;
     }
 
-    friend Message& operator<<(Message& msg, const std::string& input) {
-        msg.data.assign(input.begin(), input.end());
+    friend Message& operator>>(Message& msg, std::string& data) {
+        uint32_t numBytes;
+        msg >> numBytes;
+
+        data.assign((char*)(msg.data.data() + (msg.data.size() * sizeof(uint8_t)) - numBytes), numBytes);
+
+        msg.data.resize(msg.data.size() - numBytes);
+
         return msg;
     }
 
-    friend Message& operator>>(Message& msg, std::string& data) {
-        data.assign(msg.data.begin(), msg.data.end());
+    // Pulls any POD-like data form the message buffer
+    template<typename DataType>
+    friend Message& operator >> (Message& msg, DataType& data) {
+        // Check that the type of the data being pushed is trivially copyable
+        static_assert(std::is_standard_layout<DataType>::value, "Data is too complex to be pulled from vector");
+
+        // Cache the location towards the end of the vector where the pulled data starts
+        size_t i = msg.data.size() - sizeof(DataType);
+
+        // Physically copy the data from the vector into the user variable
+        std::memcpy(&data, msg.data.data() + i, sizeof(DataType));
+
+        // Shrink the vector to remove read bytes, and reset end position
+        msg.data.resize(i);
+
+        // Return the target message so it can be "chained"
         return msg;
-    }	
+    }
 };
 
 Message read_from(boost::asio::ip::tcp::socket& socket) {

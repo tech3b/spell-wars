@@ -4,10 +4,8 @@ use std::{
     u8, usize,
 };
 
-use serde::{Deserialize, Serialize};
-
 #[repr(u32)] // Ensure that the enum is represented as an u32
-#[derive(Serialize, Deserialize, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
@@ -44,50 +42,38 @@ impl Message {
         }
     }
 
-    pub fn push_string(&mut self, data: &str) -> &mut Message
-    {
-        self.data.extend(data.as_bytes());
+    pub fn push<T: bytemuck::Pod>(&mut self, data: &T) -> &mut Self {
+        let bytes = bytemuck::bytes_of(data);
+        self.data.extend_from_slice(bytes);
         self
     }
 
-    pub fn push<T>(&mut self, data: T) -> &mut Message
-    where
-        T: serde::Serialize,
-    {
-        self.data.extend(bincode::serialize(&data).unwrap());
-        self
+    pub fn push_string(&mut self, data: &str) -> &mut Message {
+        let bytes = data.as_bytes();
+        self.data.extend(bytes);
+        self.push(&(bytes.len() as u32))
     }
 
-    pub fn pop_string(&mut self) -> String {
-        let result = str::from_utf8(&self.data).unwrap().to_string();
-        self.data.clear();
-        result
-    }
+    pub fn pop<T: bytemuck::Pod>(&mut self) -> Option<T> {
+        let size = std::mem::size_of::<T>();
 
-    pub fn pop<T>(&mut self) -> Option<T>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let last_length = self.data.len();
-
-        let size_of_t = std::mem::size_of::<T>();
-        if last_length < size_of_t {
+        if self.data.len() < size {
             return None;
         }
 
-        // Create a slice of the last serialized object
-        let start_index = last_length - size_of_t;
-        let temp_data = &self.data[start_index..last_length];
+        let start_index = self.data.len() - size;
+        let bytes = self.data.split_off(start_index);
 
-        // Attempt to deserialize into the type T
-        match bincode::deserialize(temp_data) {
-            Ok(data) => {
-                self.data.truncate(start_index); // Remove the last T-sized portion
+        bytemuck::try_from_bytes(&bytes).ok().cloned()
+    }
 
-                Some(data)
-            }
-            Err(_) => None,
-        }
+    pub fn pop_string(&mut self) -> Option<String> {
+        let string_size: u32 = self.pop()?;
+        Some(
+            str::from_utf8(&self.data.split_off(self.data.len() - string_size as usize))
+                .ok()?
+                .to_string(),
+        )
     }
 
     pub fn write_to<T: Write>(&self, writer: &mut T) -> std::io::Result<()> {
