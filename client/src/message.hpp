@@ -90,7 +90,7 @@ public:
         uint32_t numBytes;
         msg >> numBytes;
 
-        data.assign((char*)(msg.data.data() + (msg.data.size() * sizeof(uint8_t)) - numBytes), numBytes);
+        data.assign(msg.data.end() - numBytes, msg.data.end());
 
         msg.data.resize(msg.data.size() - numBytes);
 
