@@ -2,7 +2,7 @@ use message::Message;
 use rand::Rng;
 
 use std::{
-    io::{Error, Write},
+    io::Write,
     net::{TcpListener, TcpStream},
     thread,
     time::Duration,
