@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(client)
 
-set(BOOST_INCLUDE_LIBRARIES asio endian)
+set(BOOST_INCLUDE_LIBRARIES asio)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(Boost 1.86 COMPONENTS asio endian)  # Specify required components
+find_package(Boost 1.86 COMPONENTS asio)  # Specify required components
 
 if(NOT Boost_FOUND)
     message(WARNING "Boost not found. Attempting to fetch Boost...")
@@ -21,8 +21,8 @@ if(NOT Boost_FOUND)
     FetchContent_MakeAvailable(boost)
 endif()
 
-find_package(Boost 1.86 REQUIRED COMPONENTS asio endian)
+find_package(Boost 1.86 REQUIRED COMPONENTS asio)
 
 add_executable(client src/main.cpp)
 
-target_link_libraries(client Boost::asio Boost::endian)
+target_link_libraries(client Boost::asio)

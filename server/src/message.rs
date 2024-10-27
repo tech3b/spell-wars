@@ -77,8 +77,8 @@ impl Message {
     }
 
     pub fn write_to<T: Write>(&self, writer: &mut T) -> std::io::Result<()> {
-        writer.write_all(&(self.message_type as u32).to_be_bytes())?;
-        writer.write_all(&(self.data.len() as u32).to_be_bytes())?;
+        writer.write_all(&(self.message_type as u32).to_le_bytes())?;
+        writer.write_all(&(self.data.len() as u32).to_le_bytes())?;
         writer.write_all(&self.data)
     }
 }
@@ -91,11 +91,11 @@ impl<'a, R: Read> MessageIterator<'a, R> {
     fn next_message(&mut self) -> std::io::Result<Message> {
         let mut message_type_buf = [0u8; std::mem::size_of::<MessageType>()];
         self.reader.read_exact(&mut message_type_buf)?;
-        let message_type = MessageType::from(u32::from_be_bytes(message_type_buf));
+        let message_type = MessageType::from(u32::from_le_bytes(message_type_buf));
 
         let mut length_buf = [0u8; std::mem::size_of::<u32>()];
         self.reader.read_exact(&mut length_buf)?;
-        let message_length = u32::from_be_bytes(length_buf) as usize;
+        let message_length = u32::from_le_bytes(length_buf) as usize;
 
         let mut data = vec![0u8; message_length];
         self.reader.read_exact(&mut data)?;

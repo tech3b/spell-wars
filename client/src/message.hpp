@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <tuple>
 #include <boost/asio.hpp>
-#include <boost/endian/conversion.hpp>
 
 enum MessageType {
     ConnectionRequested = 1,
@@ -59,13 +58,12 @@ public:
     }
 
     std::tuple<uint32_t, uint32_t> prepare_inputs() {
-        return std::tuple(boost::endian::native_to_big(static_cast<uint32_t>(messageType)),
-                          boost::endian::native_to_big(static_cast<uint32_t>(data.size())));
+        return std::tuple(static_cast<uint32_t>(messageType), static_cast<uint32_t>(data.size()));
     }
 
     friend Message& operator<<(Message& msg, const std::string& input) {
         msg.data.insert(msg.data.end(), input.begin(), input.end());
-        return msg << (uint32_t)input.length();
+        return msg << static_cast<uint32_t>(input.length());
     }
 
     template<typename DataType>
@@ -120,11 +118,11 @@ public:
 Message read_from(boost::asio::ip::tcp::socket& socket) {
     uint32_t messageTypeSerialized = 0;
     boost::asio::read(socket, boost::asio::buffer(&messageTypeSerialized, sizeof(messageTypeSerialized)));
-    MessageType messageType = static_cast<MessageType>(boost::endian::big_to_native(messageTypeSerialized));
+    MessageType messageType = static_cast<MessageType>(messageTypeSerialized);
 
     uint32_t dataLengthSerialized = 0;
     boost::asio::read(socket, boost::asio::buffer(&dataLengthSerialized, sizeof(dataLengthSerialized)));
-    size_t dataLength = boost::endian::big_to_native(dataLengthSerialized);
+    size_t dataLength = dataLengthSerialized;
 
     std::vector<uint8_t> data;
     data.resize(dataLength);
