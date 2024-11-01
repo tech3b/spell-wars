@@ -44,13 +44,12 @@ impl Message {
         }
     }
 
-    pub fn push_string(&mut self, data: &str) -> &mut Message
-    {
+    pub fn push_string(&mut self, data: &str) -> &mut Self {
         self.data.extend(data.as_bytes());
         self
     }
 
-    pub fn push<T>(&mut self, data: T) -> &mut Message
+    pub fn push<T>(&mut self, data: T) -> &mut Self
     where
         T: serde::Serialize,
     {
