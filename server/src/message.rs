@@ -48,7 +48,7 @@ impl Message {
         self
     }
 
-    pub fn push_string(&mut self, data: &str) -> &mut Message {
+    pub fn push_string(&mut self, data: &str) -> &mut Self {
         let bytes = data.as_bytes();
         self.data.extend(bytes);
         self.push(&(bytes.len() as u32))
