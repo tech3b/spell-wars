@@ -13,15 +13,13 @@ mod message;
 fn respond(mut stream: TcpStream) -> std::io::Result<()> {
     let mut writing_stream = stream.try_clone()?;
 
-    for message_result in message_iterator(&mut stream) {
-        match message_result
-            .and_then(|mut message| process_message(&mut message, &mut writing_stream))
-        {
-            Ok(_) => continue,
-            err => return err,
-        }
-    }
-    Ok(())
+    message_iterator(&mut stream)
+        .map(|message_result| {
+            message_result
+                .and_then(|mut message| process_message(&mut message, &mut writing_stream))
+        })
+        .find(|result| result.is_err())
+        .unwrap_or(Ok(()))
 }
 
 fn process_message(message: &mut Message, writing_stream: &mut TcpStream) -> std::io::Result<()> {
