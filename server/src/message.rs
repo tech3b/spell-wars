@@ -1,8 +1,5 @@
 use core::str;
-use std::{
-    io::{ErrorKind, Read, Write},
-    u8, usize,
-};
+use std::io::{ErrorKind, Read, Write};
 
 #[repr(u32)] // Ensure that the enum is represented as an u32
 #[derive(Copy, Clone)]
@@ -81,34 +78,34 @@ impl Message {
         writer.write_all(&(self.data.len() as u32).to_le_bytes())?;
         writer.write_all(&self.data)
     }
-}
 
-pub struct MessageIterator<'a, R: Read> {
-    pub reader: &'a mut R,
-}
-
-impl<'a, R: Read> MessageIterator<'a, R> {
-    fn next_message(&mut self) -> std::io::Result<Message> {
+    pub fn next_message<R: Read>(reader: &mut R) -> std::io::Result<Message> {
         let mut message_type_buf = [0u8; std::mem::size_of::<MessageType>()];
-        self.reader.read_exact(&mut message_type_buf)?;
+        reader.read_exact(&mut message_type_buf)?;
         let message_type = MessageType::from(u32::from_le_bytes(message_type_buf));
 
         let mut length_buf = [0u8; std::mem::size_of::<u32>()];
-        self.reader.read_exact(&mut length_buf)?;
+        reader.read_exact(&mut length_buf)?;
         let message_length = u32::from_le_bytes(length_buf) as usize;
 
         let mut data = vec![0u8; message_length];
-        self.reader.read_exact(&mut data)?;
+        reader.read_exact(&mut data)?;
 
         Ok(Message { message_type, data })
     }
+
+    pub fn iter<'a, R: std::io::Read>(reader: &'a mut R) -> MessageIterator<'a, R> {
+        MessageIterator(reader)
+    }
 }
+
+pub struct MessageIterator<'a, R: Read>(&'a mut R);
 
 impl<'a, R: Read> Iterator for MessageIterator<'a, R> {
     type Item = std::io::Result<Message>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_message() {
+        match Message::next_message(self.0) {
             Ok(message) => Some(Ok(message)),
             Err(e) => {
                 if e.kind() == ErrorKind::UnexpectedEof {
