@@ -82,18 +82,17 @@ fn main() {
     thread::spawn(move || loop {
         println!("new iteration");
         for user in users_in_main.lock().unwrap().iter() {
-            user_to_read_deq_in_main
-                .lock()
-                .unwrap()
-                .get(user)
-                .zip(user_to_write_deq_in_main.lock().unwrap().get(user))
-                .and_then(|(read_deq, write_deq)| {
-                    read_deq
-                        .lock()
-                        .unwrap()
-                        .pop_front()
-                        .map(|mut message| process_message(&mut message, *user, write_deq).unwrap())
-                });
+            Option::zip(
+                user_to_read_deq_in_main.lock().unwrap().get(user),
+                user_to_write_deq_in_main.lock().unwrap().get(user),
+            )
+            .and_then(|(read_deq, write_deq)| {
+                read_deq
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .map(|mut message| process_message(&mut message, *user, write_deq).unwrap())
+            });
         }
         thread::sleep(Duration::from_secs(2));
     });
