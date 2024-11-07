@@ -1,3 +1,4 @@
+use game::GameState;
 use message::{Message, MessageType};
 use rand::Rng;
 
@@ -9,55 +10,8 @@ use std::{
     time::Duration,
 };
 
+mod game;
 mod message;
-
-fn process_message(
-    message: &mut Message,
-    user: i32,
-    write_queue_mutex: &Mutex<VecDeque<Message>>,
-) -> Result<(), String> {
-    match message.message_type() {
-        MessageType::ConnectionRequested => {
-            let some_client_number: i32 = message.pop().unwrap_or(0);
-
-            println!("Some client connected: {some_client_number}");
-            println!("Sending client number: {user}");
-
-            let mut queue = write_queue_mutex.lock().unwrap();
-            let mut accepted_message = Message::new(MessageType::ConnectionAccepted);
-            accepted_message.push(&user);
-            queue.push_back(accepted_message);
-            queue.push_back(create_stub_message());
-
-            Ok(())
-        }
-        MessageType::StubMessage => {
-            let s2 = message
-                .pop_string()
-                .ok_or(String::from("Can't pop string"))?;
-            let s1 = message
-                .pop_string()
-                .ok_or(String::from("Can't pop string"))?;
-
-            println!("message from {user}: s1: {s1}, s2: {s2}");
-
-            write_queue_mutex
-                .lock()
-                .unwrap()
-                .push_back(create_stub_message());
-
-            Ok(())
-        }
-        _ => todo!(),
-    }
-}
-
-fn create_stub_message() -> Message {
-    let mut stub_message = Message::new(MessageType::StubMessage);
-    stub_message.push_string("Hello from the other siiiiiiiiiide!");
-    stub_message.push_string("At least I can say that I've triiiiiiiiiiied!");
-    stub_message
-}
 
 fn main() {
     let address = "127.0.0.1:10101";
@@ -172,29 +126,25 @@ fn spawn_main_thread(
     user_to_read_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
     user_to_write_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
 ) {
-    thread::spawn(move || loop {
-        println!("new iteration");
-        for user in users.lock().unwrap().iter() {
-            Option::zip(
-                deq_by_user(&user_to_read_deq, *user),
-                deq_by_user(&user_to_write_deq, *user),
-            )
-            .and_then(|(read_deq, write_deq)| {
-                message_from_deq(&read_deq)
-                    .map(|mut message| process_message(&mut message, *user, &write_deq).unwrap())
-            });
+    thread::spawn(move || {
+        let rate = Duration::from_secs_f64(1 as f64 / 30 as f64);
+
+        let mut game = GameState::new(users, user_to_write_deq, user_to_read_deq);
+        let mut start = std::time::Instant::now();
+        let mut start_io = start;
+
+        loop {
+            let new_start = std::time::Instant::now();
+            let elapsed = new_start.duration_since(start);
+            game.elapsed(elapsed);
+
+            let elapsed_io = new_start.duration_since(start_io);
+            if elapsed_io > rate {
+                start_io = new_start;
+                game.pull_updates();
+                game.publish_updates();
+            }
+            start = new_start;
         }
-        thread::sleep(Duration::from_secs(2));
     });
-}
-
-fn deq_by_user(
-    user_to_deq: &Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>,
-    user: i32,
-) -> Option<Arc<Mutex<VecDeque<Message>>>> {
-    user_to_deq.lock().unwrap().get(&user).map(|a| a.clone())
-}
-
-fn message_from_deq(deq: &Mutex<VecDeque<Message>>) -> Option<Message> {
-    deq.lock().unwrap().pop_front()
 }
