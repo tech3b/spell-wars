@@ -14,7 +14,7 @@ mod message;
 fn process_message(
     message: &mut Message,
     user: i32,
-    write_queue_mutex: Arc<Mutex<VecDeque<Message>>>,
+    write_queue_mutex: &Mutex<VecDeque<Message>>,
 ) -> Result<(), String> {
     match message.message_type() {
         MessageType::ConnectionRequested => {
@@ -176,25 +176,25 @@ fn spawn_main_thread(
         println!("new iteration");
         for user in users.lock().unwrap().iter() {
             Option::zip(
-                user_to_read_deq
-                    .lock()
-                    .unwrap()
-                    .get(user)
-                    .map(|a| a.clone()),
-                user_to_write_deq
-                    .lock()
-                    .unwrap()
-                    .get(user)
-                    .map(|a| a.clone()),
+                deq_by_user(&user_to_read_deq, *user),
+                deq_by_user(&user_to_write_deq, *user),
             )
             .and_then(|(read_deq, write_deq)| {
-                read_deq
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .map(|mut message| process_message(&mut message, *user, write_deq).unwrap())
+                message_from_deq(&read_deq)
+                    .map(|mut message| process_message(&mut message, *user, &write_deq).unwrap())
             });
         }
         thread::sleep(Duration::from_secs(2));
     });
+}
+
+fn deq_by_user(
+    user_to_deq: &Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>,
+    user: i32,
+) -> Option<Arc<Mutex<VecDeque<Message>>>> {
+    user_to_deq.lock().unwrap().get(&user).map(|a| a.clone())
+}
+
+fn message_from_deq(deq: &Mutex<VecDeque<Message>>) -> Option<Message> {
+    deq.lock().unwrap().pop_front()
 }
