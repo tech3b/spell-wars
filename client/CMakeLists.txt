@@ -3,7 +3,7 @@ project(client)
 
 set(BOOST_INCLUDE_LIBRARIES asio)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 
 find_package(Boost 1.86 COMPONENTS asio)  # Specify required components
 

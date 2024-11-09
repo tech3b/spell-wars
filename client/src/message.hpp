@@ -10,7 +10,8 @@ enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
     ConnectionRejected = 3,
-    StubMessage = 4,
+    ReadyToStart = 4,
+    StubMessage = 5,
 };
 
 class Message {
@@ -30,6 +31,8 @@ public:
     Message(Message&& other) noexcept 
         : messageType(other.messageType), data(std::move(other.data)) {
     }
+    
+    Message(const Message&) noexcept = delete;
 
     MessageType type() {
         return this->messageType;

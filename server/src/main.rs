@@ -127,7 +127,7 @@ fn spawn_main_thread(
     user_to_write_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
 ) {
     thread::spawn(move || {
-        let rate = Duration::from_secs_f64(1 as f64 / 30 as f64);
+        let rate = Duration::from_secs_f64(1.0 / 30.0);
 
         let mut game = GameState::new(users, user_to_write_deq, user_to_read_deq);
         let mut start = std::time::Instant::now();

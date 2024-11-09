@@ -7,7 +7,8 @@ pub enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
     ConnectionRejected = 3,
-    StubMessage = 4,
+    ReadyToStart = 4,
+    StubMessage = 5,
 }
 
 impl From<u32> for MessageType {
@@ -16,7 +17,7 @@ impl From<u32> for MessageType {
             1 => MessageType::ConnectionRequested,
             2 => MessageType::ConnectionAccepted,
             3 => MessageType::ConnectionRejected,
-            4 => MessageType::StubMessage,
+            5 => MessageType::StubMessage,
             _ => panic!("Unknown MessageType value: {value}!"),
         }
     }

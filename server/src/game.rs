@@ -32,8 +32,12 @@ impl GameState {
     }
 
     pub fn elapsed(&mut self, elapsed: Duration) {
-        for (_, duration) in self.user_to_duration.iter_mut() {
-            *duration += elapsed;
+        for (user, duration) in self.user_to_duration.iter_mut() {
+            self.user_to_ready_to_send.get(user).map(|ready_to_send|{
+                if *ready_to_send {
+                    *duration += elapsed;
+                }
+            });
         }
     }
 
