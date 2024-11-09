@@ -42,7 +42,7 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
 }
 
 void game_loop(std::chrono::duration<double> rate, Game& game) {
-    game.start();
+    auto started_game = game.start();
     auto start = std::chrono::system_clock::now();
     auto start_io = start;
 
@@ -52,11 +52,11 @@ void game_loop(std::chrono::duration<double> rate, Game& game) {
         auto elapsed = new_start - start;
         auto elapsed_io = new_start - start_io;
 
-        game.elapsed(elapsed);
+        started_game.elapsed(elapsed);
 
         if(elapsed_io > rate) {
-            game.pull_updates();
-            game.publish_updates();
+            started_game.pull_updates();
+            started_game.publish_updates();
             start_io = new_start;
         }
         start = new_start;
