@@ -28,9 +28,7 @@ public:
         data(std::move(_data)) {
     }
     
-    Message(Message&& other) noexcept 
-        : messageType(other.messageType), data(std::move(other.data)) {
-    }
+    Message(Message&& other) noexcept = default;
     
     Message(const Message&) noexcept = delete;
 

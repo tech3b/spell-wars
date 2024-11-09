@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <queue>
+#include <random>
 #include "message.hpp"
 
 
@@ -16,19 +17,42 @@ private:
 
     std::chrono::system_clock::duration since_last_stub;
     bool accepted_stub;
+    std::uniform_int_distribution<> distrib;
+    std::mt19937 gen;
 
 public:
     Game(std::shared_ptr<std::queue<Message>>& _write_message_queue,
          std::shared_ptr<std::mutex>& _write_queue_mutex,
          std::shared_ptr<std::queue<Message>>& _read_message_queue,
-         std::shared_ptr<std::mutex>& _read_queue_mutex) :
+         std::shared_ptr<std::mutex>& _read_queue_mutex,
+         std::uniform_int_distribution<>& _distrib,
+         std::mt19937& _gen) :
             write_message_queue(_write_message_queue),
             write_queue_mutex(_write_queue_mutex),
             read_message_queue(_read_message_queue),
             read_queue_mutex(_read_queue_mutex),
             is_ready_to_start(false),
             since_last_stub(),
-            accepted_stub(false) {
+            accepted_stub(false),
+            distrib(std::move(_distrib)),
+            gen(std::move(_gen)) {
+    }
+
+    Game(const Game& other) = delete;
+
+    Game(Game&& other) = default;
+
+    void start() {
+        int32_t some_number = distrib(gen);
+        Message connection_requested_message(MessageType::ConnectionRequested);
+        connection_requested_message << some_number;
+
+        std::cout << "Sending my number: " << some_number << std::endl;
+
+        {
+            std::unique_lock<std::mutex> lock(*write_queue_mutex);
+            (*write_message_queue).push(std::move(connection_requested_message));
+        }
     }
 
     void elapsed(std::chrono::system_clock::duration& elapsed) {
