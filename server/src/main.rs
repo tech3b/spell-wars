@@ -25,37 +25,31 @@ fn main() {
         Arc::new(Mutex::new(HashMap::<i32, mpsc::Receiver<Message>>::new()));
     let users = Arc::new(Mutex::new(HashSet::<i32>::new()));
 
-    spawn_main_thread(
+    spawn_listening_thread(
+        listener,
         users.clone(),
         user_to_write_sender.clone(),
         user_to_read_receiver.clone(),
     );
 
-    for stream in listener.incoming() {
-        let (write_sender, write_receiver) = mpsc::channel();
-        let (read_sender, read_receiver) = mpsc::channel();
+    let rate = Duration::from_secs_f64(1.0 / 30.0);
 
-        let user_id = insert_user(&mut users.lock().unwrap());
+    let mut game = GameState::new(users, user_to_write_sender, user_to_read_receiver);
+    let mut start = std::time::Instant::now();
+    let mut start_io = start;
 
-        user_to_write_sender
-            .lock()
-            .unwrap()
-            .insert(user_id, write_sender);
-        user_to_read_receiver
-            .lock()
-            .unwrap()
-            .insert(user_id, read_receiver);
+    loop {
+        let new_start = std::time::Instant::now();
+        let elapsed = new_start.duration_since(start);
+        game.elapsed(elapsed);
 
-        let actual_stream = stream.unwrap();
-
-        spawn_write_thread(actual_stream.try_clone().unwrap(), user_id, write_receiver);
-        spawn_read_thread(
-            actual_stream.try_clone().unwrap(),
-            user_id,
-            read_sender,
-            user_to_write_sender.clone(),
-            user_to_read_receiver.clone(),
-        );
+        let elapsed_io = new_start.duration_since(start_io);
+        if elapsed_io > rate {
+            start_io = new_start;
+            game.pull_updates();
+            game.publish_updates();
+        }
+        start = new_start;
     }
 }
 
@@ -69,6 +63,42 @@ fn insert_user(users: &mut HashSet<i32>) -> i32 {
             return random;
         }
     }
+}
+
+fn spawn_listening_thread(
+    listener: TcpListener,
+    users: Arc<Mutex<HashSet<i32>>>,
+    user_to_write_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
+    user_to_read_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
+) {
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let (write_sender, write_receiver) = mpsc::channel();
+            let (read_sender, read_receiver) = mpsc::channel();
+
+            let user_id = insert_user(&mut users.lock().unwrap());
+
+            user_to_write_sender
+                .lock()
+                .unwrap()
+                .insert(user_id, write_sender);
+            user_to_read_receiver
+                .lock()
+                .unwrap()
+                .insert(user_id, read_receiver);
+
+            let actual_stream = stream.unwrap();
+
+            spawn_write_thread(actual_stream.try_clone().unwrap(), user_id, write_receiver);
+            spawn_read_thread(
+                actual_stream.try_clone().unwrap(),
+                user_id,
+                read_sender,
+                user_to_write_sender.clone(),
+                user_to_read_receiver.clone(),
+            );
+        }
+    });
 }
 
 fn spawn_write_thread(
@@ -115,32 +145,4 @@ fn spawn_read_thread(
             .unwrap();
         println!("read thread finished for {user_id}");
     })
-}
-
-fn spawn_main_thread(
-    users: Arc<Mutex<HashSet<i32>>>,
-    user_to_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
-    user_to_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
-) {
-    thread::spawn(move || {
-        let rate = Duration::from_secs_f64(1.0 / 30.0);
-
-        let mut game = GameState::new(users, user_to_sender, user_to_receiver);
-        let mut start = std::time::Instant::now();
-        let mut start_io = start;
-
-        loop {
-            let new_start = std::time::Instant::now();
-            let elapsed = new_start.duration_since(start);
-            game.elapsed(elapsed);
-
-            let elapsed_io = new_start.duration_since(start_io);
-            if elapsed_io > rate {
-                start_io = new_start;
-                game.pull_updates();
-                game.publish_updates();
-            }
-            start = new_start;
-        }
-    });
 }
