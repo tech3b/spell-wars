@@ -10,6 +10,7 @@ class Game {
 private:
     std::shared_ptr<TFQueue<Message>> write_message_queue;
     std::shared_ptr<TFQueue<Message>> read_message_queue;
+    std::shared_ptr<std::atomic_flag> lost_connection;
 
     std::uniform_int_distribution<> distrib;
     std::mt19937 gen;
@@ -17,10 +18,12 @@ private:
 public:
     Game(std::shared_ptr<TFQueue<Message>>& _write_message_queue,
          std::shared_ptr<TFQueue<Message>>& _read_message_queue,
+         std::shared_ptr<std::atomic_flag>& _lost_connection,
          std::uniform_int_distribution<>& _distrib,
          std::mt19937& _gen) :
             write_message_queue(_write_message_queue),
             read_message_queue(_read_message_queue),
+            lost_connection(_lost_connection),
             distrib(std::move(_distrib)),
             gen(std::move(_gen)) {
     }
@@ -38,6 +41,8 @@ public:
 
         write_message_queue->enqueue(std::move(connection_requested_message));
 
-        return StartedGame(std::move(write_message_queue), std::move(read_message_queue));
+        return StartedGame(std::move(write_message_queue),
+                           std::move(read_message_queue),
+                           std::move(lost_connection));
     }
 };

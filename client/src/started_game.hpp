@@ -2,20 +2,24 @@
 
 #include "message.hpp"
 #include "tfqueue.hpp"
+#include <atomic>
 
 class StartedGame {
 private:
     std::shared_ptr<TFQueue<Message>> write_message_queue;
     std::shared_ptr<TFQueue<Message>> read_message_queue;
+    std::shared_ptr<std::atomic_flag> lost_connection;
 
     bool is_ready_to_start;
     std::chrono::system_clock::duration since_last_stub;
     bool accepted_stub;
 public:
     StartedGame(std::shared_ptr<TFQueue<Message>>&& _write_message_queue,
-                std::shared_ptr<TFQueue<Message>>&& _read_message_queue):
+                std::shared_ptr<TFQueue<Message>>&& _read_message_queue,
+                std::shared_ptr<std::atomic_flag>&& _lost_connection):
                     write_message_queue(std::move(_write_message_queue)),
                     read_message_queue(std::move(_read_message_queue)),
+                    lost_connection(std::move(_lost_connection)),
                     is_ready_to_start(false),
                     since_last_stub(),
                     accepted_stub(false) {
@@ -25,10 +29,14 @@ public:
 
     StartedGame(StartedGame&& other) = default;
 
-    void elapsed(std::chrono::system_clock::duration& elapsed) {
+    bool elapsed(std::chrono::system_clock::duration& elapsed) {
+        if(lost_connection->test()) {
+            return false;
+        }
         if(accepted_stub) {
             since_last_stub += elapsed;
         }
+        return true;
     }
 
     void pull_updates() {

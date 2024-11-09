@@ -19,24 +19,39 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
 
     auto write_message_queue = std::make_shared<TFQueue<Message>>();
     auto read_message_queue = std::make_shared<TFQueue<Message>>();
+    auto lost_connection = std::make_shared<std::atomic_flag>();
 
     std::thread writer([=]() {
         while(true) {
-            auto could_be_message = write_message_queue->dequeue();
-            could_be_message.transform([&](Message& message) {
-                return message.write_to(*socket);
-            });
+            try {
+                auto could_be_message = write_message_queue->dequeue();
+                if(!could_be_message.has_value()) {
+                    std::cout << "no message found in queue, finishing" << std::endl;
+                    break;
+                }
+                could_be_message.value().write_to(*socket);
+            } catch (const std::exception& e) {
+                std::cerr << "Error in writer thread: " << e.what() << std::endl;
+                lost_connection->test_and_set();
+                break;
+            }
         }
     });
     std::thread reader([=]() {
         while(true) {
-            auto message = read_from(*socket);
-
-            read_message_queue->enqueue(std::move(message));
+            try {
+                auto message = read_from(*socket);
+                read_message_queue->enqueue(std::move(message));
+            } catch (const std::exception& e) {
+                std::cerr << "Error in reader thread: " << e.what() << std::endl;
+                lost_connection->test_and_set();
+                write_message_queue->finish();
+                break;
+            }
         }
     });
 
-    Game game(write_message_queue, read_message_queue, distrib, gen);
+    Game game(write_message_queue, read_message_queue, lost_connection, distrib, gen);
 
     return std::tuple(std::move(writer), std::move(reader), std::move(game));
 }
@@ -52,7 +67,9 @@ void game_loop(std::chrono::duration<double> rate, Game& game) {
         auto elapsed = new_start - start;
         auto elapsed_io = new_start - start_io;
 
-        started_game.elapsed(elapsed);
+        if(!started_game.elapsed(elapsed)) {
+            break;
+        }
 
         if(elapsed_io > rate) {
             started_game.pull_updates();
@@ -85,6 +102,9 @@ int main() {
 
         std::get<0>(init_result).join();
         std::get<1>(init_result).join();
+
+        std::cout << "Main loop is finished, please press enter" << std::endl;
+        std::cin.get();
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
