@@ -1,14 +1,16 @@
 use game::GameState;
-use message::{Message, MessageType};
+use message::Message;
 use rand::Rng;
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
     time::Duration,
 };
+
+use std::sync::mpsc;
 
 mod game;
 mod message;
@@ -18,49 +20,41 @@ fn main() {
     let listener = TcpListener::bind(address).unwrap();
     println!("Listening on {address} for incoming connections");
 
-    let user_to_write_deq = Arc::new(Mutex::new(
-        HashMap::<i32, Arc<Mutex<VecDeque<Message>>>>::new(),
-    ));
-    let user_to_read_deq = Arc::new(Mutex::new(
-        HashMap::<i32, Arc<Mutex<VecDeque<Message>>>>::new(),
-    ));
+    let user_to_write_sender = Arc::new(Mutex::new(HashMap::<i32, mpsc::Sender<Message>>::new()));
+    let user_to_read_receiver =
+        Arc::new(Mutex::new(HashMap::<i32, mpsc::Receiver<Message>>::new()));
     let users = Arc::new(Mutex::new(HashSet::<i32>::new()));
 
     spawn_main_thread(
         users.clone(),
-        user_to_read_deq.clone(),
-        user_to_write_deq.clone(),
+        user_to_write_sender.clone(),
+        user_to_read_receiver.clone(),
     );
 
     for stream in listener.incoming() {
-        let write_deq = Arc::new(Mutex::new(VecDeque::<Message>::new()));
-        let read_deq = Arc::new(Mutex::new(VecDeque::<Message>::new()));
+        let (write_sender, write_receiver) = mpsc::channel();
+        let (read_sender, read_receiver) = mpsc::channel();
 
         let user_id = insert_user(&mut users.lock().unwrap());
 
-        user_to_write_deq
+        user_to_write_sender
             .lock()
             .unwrap()
-            .insert(user_id, write_deq.clone());
-        user_to_read_deq
+            .insert(user_id, write_sender);
+        user_to_read_receiver
             .lock()
             .unwrap()
-            .insert(user_id, read_deq.clone());
+            .insert(user_id, read_receiver);
 
         let actual_stream = stream.unwrap();
 
-        spawn_write_thread(
-            actual_stream.try_clone().unwrap(),
-            user_id,
-            write_deq.clone(),
-            user_to_write_deq.clone(),
-        );
+        spawn_write_thread(actual_stream.try_clone().unwrap(), user_id, write_receiver);
         spawn_read_thread(
             actual_stream.try_clone().unwrap(),
             user_id,
-            read_deq.clone(),
-            user_to_read_deq.clone(),
-            write_deq.clone(),
+            read_sender,
+            user_to_write_sender.clone(),
+            user_to_read_receiver.clone(),
         );
     }
 }
@@ -80,20 +74,15 @@ fn insert_user(users: &mut HashSet<i32>) -> i32 {
 fn spawn_write_thread(
     mut stream: TcpStream,
     user_id: i32,
-    write_deq: Arc<Mutex<VecDeque<Message>>>,
-    user_to_write_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
+    write_receiver: mpsc::Receiver<Message>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        loop {
-            match write_deq.lock().unwrap().pop_front() {
-                Some(message) => match message.write_to(&mut stream) {
-                    Ok(_) => continue,
-                    Err(_) => break,
-                },
-                None => continue,
+        for message in write_receiver.iter() {
+            match message.write_to(&mut stream) {
+                Ok(_) => continue,
+                Err(_) => break,
             };
         }
-        user_to_write_deq.lock().unwrap().remove(&user_id).unwrap();
         println!("write thread finished for {user_id}");
     })
 }
@@ -101,35 +90,42 @@ fn spawn_write_thread(
 fn spawn_read_thread(
     mut stream: TcpStream,
     user_id: i32,
-    read_deq: Arc<Mutex<VecDeque<Message>>>,
-    user_to_read_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
-    write_deq: Arc<Mutex<VecDeque<Message>>>,
+    read_sender: mpsc::Sender<Message>,
+    user_to_write_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
+    user_to_read_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         for message_result in Message::iter(&mut stream) {
             match message_result {
-                Ok(message) => read_deq.lock().unwrap().push_back(message),
+                Ok(message) => {
+                    read_sender.send(message).unwrap();
+                }
                 Err(_) => break,
             }
         }
-        user_to_read_deq.lock().unwrap().remove(&user_id).unwrap();
-        write_deq
+        user_to_write_sender
             .lock()
             .unwrap()
-            .push_back(Message::new(MessageType::ConnectionRejected));
+            .remove(&user_id)
+            .unwrap();
+        user_to_read_receiver
+            .lock()
+            .unwrap()
+            .remove(&user_id)
+            .unwrap();
         println!("read thread finished for {user_id}");
     })
 }
 
 fn spawn_main_thread(
     users: Arc<Mutex<HashSet<i32>>>,
-    user_to_read_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
-    user_to_write_deq: Arc<Mutex<HashMap<i32, Arc<Mutex<VecDeque<Message>>>>>>,
+    user_to_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
+    user_to_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
 ) {
     thread::spawn(move || {
         let rate = Duration::from_secs_f64(1.0 / 30.0);
 
-        let mut game = GameState::new(users, user_to_write_deq, user_to_read_deq);
+        let mut game = GameState::new(users, user_to_sender, user_to_receiver);
         let mut start = std::time::Instant::now();
         let mut start_io = start;
 

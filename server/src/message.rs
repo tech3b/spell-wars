@@ -17,6 +17,7 @@ impl From<u32> for MessageType {
             1 => MessageType::ConnectionRequested,
             2 => MessageType::ConnectionAccepted,
             3 => MessageType::ConnectionRejected,
+            4 => MessageType::ReadyToStart,
             5 => MessageType::StubMessage,
             _ => panic!("Unknown MessageType value: {value}!"),
         }

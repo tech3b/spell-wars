@@ -1,19 +1,16 @@
 #pragma once
 
 #include <chrono>
-#include <queue>
 #include <random>
 #include "message.hpp"
+#include "tfqueue.hpp"
 
 
 class Game {
 private:
     bool is_ready_to_start;
-    std::shared_ptr<std::queue<Message>> write_message_queue;
-    std::shared_ptr<std::mutex> write_queue_mutex;
-
-    std::shared_ptr<std::queue<Message>> read_message_queue;
-    std::shared_ptr<std::mutex> read_queue_mutex;
+    std::shared_ptr<TFQueue<Message>> write_message_queue;
+    std::shared_ptr<TFQueue<Message>> read_message_queue;
 
     std::chrono::system_clock::duration since_last_stub;
     bool accepted_stub;
@@ -21,16 +18,12 @@ private:
     std::mt19937 gen;
 
 public:
-    Game(std::shared_ptr<std::queue<Message>>& _write_message_queue,
-         std::shared_ptr<std::mutex>& _write_queue_mutex,
-         std::shared_ptr<std::queue<Message>>& _read_message_queue,
-         std::shared_ptr<std::mutex>& _read_queue_mutex,
+    Game(std::shared_ptr<TFQueue<Message>>& _write_message_queue,
+         std::shared_ptr<TFQueue<Message>>& _read_message_queue,
          std::uniform_int_distribution<>& _distrib,
          std::mt19937& _gen) :
             write_message_queue(_write_message_queue),
-            write_queue_mutex(_write_queue_mutex),
             read_message_queue(_read_message_queue),
-            read_queue_mutex(_read_queue_mutex),
             is_ready_to_start(false),
             since_last_stub(),
             accepted_stub(false),
@@ -49,10 +42,7 @@ public:
 
         std::cout << "Sending my number: " << some_number << std::endl;
 
-        {
-            std::unique_lock<std::mutex> lock(*write_queue_mutex);
-            (*write_message_queue).push(std::move(connection_requested_message));
-        }
+        write_message_queue->enqueue(std::move(connection_requested_message));
     }
 
     void elapsed(std::chrono::system_clock::duration& elapsed) {
@@ -62,11 +52,7 @@ public:
     }
 
     void pull_updates() {
-        std::unique_lock<std::mutex> lock(*read_queue_mutex);
-        while (!(*read_message_queue).empty()) {
-            auto message = std::move((*read_message_queue).front());
-            (*read_message_queue).pop();
-
+        for(Message& message : *read_message_queue) {
             switch(message.type()) {
                 case MessageType::ConnectionAccepted: {
                     int32_t number_of_user;
@@ -99,8 +85,7 @@ public:
 
             message_back << s1_back << s2_back;
 
-            std::unique_lock<std::mutex> lock(*write_queue_mutex);
-            (*write_message_queue).push(std::move(message_back));
+            write_message_queue->enqueue(std::move(message_back));
         }
     }
 };

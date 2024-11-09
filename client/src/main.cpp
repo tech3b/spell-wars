@@ -3,22 +3,12 @@
 #include <random>
 #include <chrono>
 #include <thread>
-#include <queue>
-#include <mutex>
 #include <optional>
 #include <tuple>
 #include "message.hpp"
 #include "game.hpp"
+#include "tfqueue.hpp"
 
-std::optional<Message> read_one(std::mutex& write_mutex, std::queue<Message>& write_message_queue) {
-    std::unique_lock<std::mutex> lock(write_mutex);
-    if (!write_message_queue.empty()) {
-        auto item = std::move(write_message_queue.front());
-        write_message_queue.pop();
-        return item;
-    }
-    return {};
-}
 
 std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socket&& socket_value) {
     std::random_device rd;
@@ -27,15 +17,12 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
 
     auto socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket_value));
 
-    auto write_message_queue = std::make_shared<std::queue<Message>>();
-    auto write_mutex = std::make_shared<std::mutex>();
-
-    auto read_message_queue = std::make_shared<std::queue<Message>>();
-    auto read_mutex = std::make_shared<std::mutex>();
+    auto write_message_queue = std::make_shared<TFQueue<Message>>();
+    auto read_message_queue = std::make_shared<TFQueue<Message>>();
 
     std::thread writer([=]() {
         while(true) {
-            auto could_be_message = read_one(*write_mutex, *write_message_queue);
+            auto could_be_message = write_message_queue->dequeue();
             could_be_message.transform([&](Message& message) {
                 return message.write_to(*socket);
             });
@@ -45,12 +32,11 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
         while(true) {
             auto message = read_from(*socket);
 
-            std::unique_lock<std::mutex> lock(*read_mutex);
-            (*read_message_queue).push(std::move(message));
+            read_message_queue->enqueue(std::move(message));
         }
     });
 
-    Game game(write_message_queue, write_mutex, read_message_queue, read_mutex, distrib, gen);
+    Game game(write_message_queue, read_message_queue, distrib, gen);
 
     return std::tuple(std::move(writer), std::move(reader), std::move(game));
 }
