@@ -1,4 +1,4 @@
-use game::GameState;
+use game::{state::just_created::JustCreatedGame, Game};
 use message::Message;
 use rand::Rng;
 
@@ -12,8 +12,8 @@ use std::{
 
 use std::sync::mpsc;
 
-mod game;
-mod message;
+pub mod game;
+pub mod message;
 
 fn main() {
     let address = "127.0.0.1:10101";
@@ -25,16 +25,23 @@ fn main() {
         Arc::new(Mutex::new(HashMap::<i32, mpsc::Receiver<Message>>::new()));
     let users = Arc::new(Mutex::new(HashSet::<i32>::new()));
 
+    let stop_accepting_users: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+
     spawn_listening_thread(
         listener,
         users.clone(),
         user_to_write_sender.clone(),
         user_to_read_receiver.clone(),
+        stop_accepting_users.clone(),
     );
 
     let rate = Duration::from_secs_f64(1.0 / 30.0);
 
-    let mut game = GameState::new(users, user_to_write_sender, user_to_read_receiver);
+    let mut game = Game::new(
+        user_to_write_sender,
+        user_to_read_receiver,
+        Box::new(JustCreatedGame::new(users, stop_accepting_users)),
+    );
     let mut start = std::time::Instant::now();
     let mut start_io = start;
 
@@ -46,8 +53,7 @@ fn main() {
         let elapsed_io = new_start.duration_since(start_io);
         if elapsed_io > rate {
             start_io = new_start;
-            game.pull_updates();
-            game.publish_updates();
+            game.io_updates();
         }
         start = new_start;
     }
@@ -70,9 +76,17 @@ fn spawn_listening_thread(
     users: Arc<Mutex<HashSet<i32>>>,
     user_to_write_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
     user_to_read_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
+    stop_accepting_users: Arc<Mutex<bool>>,
 ) {
     thread::spawn(move || {
         for stream in listener.incoming() {
+            let should_stop = stop_accepting_users.lock().unwrap();
+
+            if *should_stop {
+                println!("stopping accepting new users");
+                break;
+            }
+
             let (write_sender, write_receiver) = mpsc::channel();
             let (read_sender, read_receiver) = mpsc::channel();
 

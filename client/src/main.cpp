@@ -8,6 +8,7 @@
 #include "message.hpp"
 #include "game.hpp"
 #include "tfqueue.hpp"
+#include "game/state/just_created.hpp"
 
 
 std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socket&& socket_value) {
@@ -51,13 +52,15 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
         }
     });
 
-    Game game(write_message_queue, read_message_queue, lost_connection, distrib, gen);
+    Game game(std::make_unique<JustCreatedGame>(distrib(gen)),
+              write_message_queue,
+              read_message_queue,
+              lost_connection);
 
     return std::tuple(std::move(writer), std::move(reader), std::move(game));
 }
 
 void game_loop(std::chrono::duration<double> rate, Game& game) {
-    auto started_game = game.start();
     auto start = std::chrono::system_clock::now();
     auto start_io = start;
 
@@ -67,13 +70,13 @@ void game_loop(std::chrono::duration<double> rate, Game& game) {
         auto elapsed = new_start - start;
         auto elapsed_io = new_start - start_io;
 
-        if(!started_game.elapsed(elapsed)) {
-            break;
-        }
+        game.elapsed(elapsed);
 
         if(elapsed_io > rate) {
-            started_game.pull_updates();
-            started_game.publish_updates();
+            if(game.is_lost_connection()) {
+                break;
+            }
+            game.io_updates();
             start_io = new_start;
         }
         start = new_start;

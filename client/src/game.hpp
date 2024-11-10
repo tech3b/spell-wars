@@ -4,45 +4,42 @@
 #include <random>
 #include "message.hpp"
 #include "tfqueue.hpp"
-#include "started_game.hpp"
+#include "game/state.hpp"
 
 class Game {
 private:
+    std::unique_ptr<GameState> game_state;
     std::shared_ptr<TFQueue<Message>> write_message_queue;
     std::shared_ptr<TFQueue<Message>> read_message_queue;
     std::shared_ptr<std::atomic_flag> lost_connection;
 
-    std::uniform_int_distribution<> distrib;
-    std::mt19937 gen;
-
 public:
-    Game(std::shared_ptr<TFQueue<Message>>& _write_message_queue,
+    Game(std::unique_ptr<GameState>&& _game_state,
+         std::shared_ptr<TFQueue<Message>>& _write_message_queue,
          std::shared_ptr<TFQueue<Message>>& _read_message_queue,
-         std::shared_ptr<std::atomic_flag>& _lost_connection,
-         std::uniform_int_distribution<>& _distrib,
-         std::mt19937& _gen) :
+         std::shared_ptr<std::atomic_flag>& _lost_connection) :
+            game_state(std::move(_game_state)),
             write_message_queue(_write_message_queue),
             read_message_queue(_read_message_queue),
-            lost_connection(_lost_connection),
-            distrib(std::move(_distrib)),
-            gen(std::move(_gen)) {
+            lost_connection(_lost_connection) {
     }
 
     Game(const Game& other) = delete;
 
     Game(Game&& other) = default;
 
-    StartedGame start() {
-        int32_t some_number = distrib(gen);
-        Message connection_requested_message(MessageType::ConnectionRequested);
-        connection_requested_message << some_number;
+    bool is_lost_connection() {
+        return lost_connection->test();
+    }
 
-        std::cout << "Sending my number: " << some_number << std::endl;
+    void elapsed(std::chrono::system_clock::duration& elapsed) {
+        auto updated_state = game_state->elapsed(elapsed);
+        if(updated_state.has_value()) {
+            game_state = std::move(updated_state.value());
+        }
+    }
 
-        write_message_queue->enqueue(std::move(connection_requested_message));
-
-        return StartedGame(std::move(write_message_queue),
-                           std::move(read_message_queue),
-                           std::move(lost_connection));
+    void io_updates() {
+        game_state->io_updates(*read_message_queue, *write_message_queue);
     }
 };

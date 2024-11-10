@@ -12,6 +12,8 @@ enum MessageType {
     ConnectionRejected = 3,
     ReadyToStart = 4,
     StubMessage = 5,
+    GameAboutToStart = 6,
+    GameStarting = 7,
 };
 
 class Message {
