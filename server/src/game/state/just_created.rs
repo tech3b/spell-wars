@@ -12,22 +12,24 @@ use super::GameState;
 
 pub struct JustCreatedGame {
     users: Arc<Mutex<HashSet<i32>>>,
-    time_from_first_connection: Option<Duration>,
     user_to_write_about: HashSet<i32>,
     stop_accepting_users: Arc<Mutex<bool>>,
     final_call: bool,
-    finished_with_final_users: bool,
+    ready_to_start_received: bool,
+    need_to_send_ready_for_start: bool,
+    ready_to_start_sent: bool,
 }
 
 impl JustCreatedGame {
     pub fn new(users: Arc<Mutex<HashSet<i32>>>, stop_accepting_users: Arc<Mutex<bool>>) -> Self {
         JustCreatedGame {
             users,
-            time_from_first_connection: None,
             user_to_write_about: HashSet::new(),
             stop_accepting_users,
             final_call: false,
-            finished_with_final_users: false,
+            ready_to_start_received: false,
+            need_to_send_ready_for_start: false,
+            ready_to_start_sent: false,
         }
     }
 }
@@ -39,22 +41,16 @@ impl GameState for JustCreatedGame {
         }
         self.user_to_write_about.clear();
 
-        if let Some(d) = self.time_from_first_connection.as_mut() {
-            *d += elapsed;
-        }
-        let time_to_start = self
-            .time_from_first_connection
-            .map(|d| d > Duration::from_secs(10))
-            .unwrap_or(false);
-
-        if time_to_start {
-            if self.finished_with_final_users {
-                println!("moving to ReadyToStartGame");
-                return Some(Box::new(ReadyToStartGame::new(
-                    self.users.lock().unwrap().clone(),
-                )));
-            }
+        if self.ready_to_start_received {
+            self.need_to_send_ready_for_start = true;
             self.final_call = true;
+        }
+
+        if self.ready_to_start_sent {
+            println!("moving to ReadyToStartGame");
+            return Some(Box::new(ReadyToStartGame::new(
+                self.users.lock().unwrap().clone(),
+            )));
         }
         return None;
     }
@@ -65,7 +61,6 @@ impl GameState for JustCreatedGame {
         user_to_receiver: &Mutex<HashMap<i32, mpsc::Receiver<Message>>>,
     ) {
         if self.final_call {
-            self.finished_with_final_users = true;
             *self.stop_accepting_users.lock().unwrap() = true;
         }
         for user in self.users.lock().unwrap().iter() {
@@ -83,13 +78,21 @@ impl GameState for JustCreatedGame {
                                 .map(|sender| sender.send(accepted_message).unwrap());
 
                             self.user_to_write_about.insert(*user);
-                            self.time_from_first_connection =
-                                self.time_from_first_connection.or(Some(Duration::ZERO));
+                        }
+                        MessageType::ReadyToStart => {
+                            self.ready_to_start_received = true;
                         }
                         _ => continue,
                     }
                 }
             });
+        }
+        if self.need_to_send_ready_for_start {
+            for (_, sender) in user_to_sender.lock().unwrap().iter() {
+                let ready_to_start_message = Message::new(MessageType::ReadyToStart);
+                sender.send(ready_to_start_message).unwrap();
+                self.ready_to_start_sent = true;
+            }
         }
     }
 }

@@ -14,7 +14,8 @@ public:
         game_starting(false) {
     }
 
-    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed) {
+    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
+                                                              InputState& input_state) {
         if(!seconds_before_start_written) {
             std::cout << (int)seconds_before_start << " seconds before start" << std::endl;
             seconds_before_start_written = true;

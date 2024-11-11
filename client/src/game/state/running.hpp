@@ -14,7 +14,8 @@ public:
     RunningGame() : since_last_stub(), accepted_stub(false), s1(), s2(), strings_written(true) {
     }
 
-    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed) {
+    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
+                                                              InputState& input_state) {
         if(!strings_written) {
             std::cout << "s1: " << s1 << std::endl << "s2: " << s2 << std::endl;
             strings_written = true;

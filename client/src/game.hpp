@@ -5,6 +5,7 @@
 #include "message.hpp"
 #include "tfqueue.hpp"
 #include "game/state.hpp"
+#include "game/input_state.hpp"
 
 class Game {
 private:
@@ -32,8 +33,8 @@ public:
         return lost_connection->test();
     }
 
-    void elapsed(std::chrono::system_clock::duration& elapsed) {
-        auto updated_state = game_state->elapsed(elapsed);
+    void elapsed(std::chrono::system_clock::duration& elapsed, InputState& input_state) {
+        auto updated_state = game_state->elapsed(elapsed, input_state);
         if(updated_state.has_value()) {
             game_state = std::move(updated_state.value());
         }

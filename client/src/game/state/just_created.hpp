@@ -12,16 +12,25 @@ private:
     int32_t server_user_number;
     int32_t client_user_number;
 
+    bool need_to_send_ready_to_start;
+    bool ready_to_start_sent;
+
+    bool ready_to_start_received;
+
 public:
     JustCreatedGame(int32_t _client_user_number) : 
                         connection_request_sent(false),
                         connection_request_sent_written(false),
                         connection_accepted(false),
                         connection_accepted_written(true),
-                        client_user_number(_client_user_number) {
+                        client_user_number(_client_user_number),
+                        need_to_send_ready_to_start(false),
+                        ready_to_start_sent(false),
+                        ready_to_start_received(false) {
     }
 
-    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed) {
+    virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
+                                                              InputState& input_state) {
         if(!connection_accepted_written) {
             std::cout << "Connection accepted: Welcome! You're our "<< server_user_number << " customer today!" << std::endl;
             connection_accepted_written = true;
@@ -30,7 +39,11 @@ public:
             std::cout << "Sending my number: " << client_user_number << std::endl;
             connection_request_sent_written = true;
         }
-        if(connection_request_sent && connection_accepted) {
+        if(input_state.state_by_key(Key::ENTER) && connection_accepted && !need_to_send_ready_to_start) {
+            std::cout << "need_to_send_ready_to_start = true" << std::endl;
+            need_to_send_ready_to_start = true;
+        }
+        if(ready_to_start_received) {
             std::cout << "moving to ReadyToStartGame" << std::endl;
             return std::make_optional(std::make_unique<ReadyToStartGame>());
         }
@@ -44,12 +57,22 @@ public:
             write_message_queue.enqueue(std::move(connection_requested_message));
             connection_request_sent = true;
         }
+        if(need_to_send_ready_to_start && !ready_to_start_sent) {
+            Message ready_to_start(MessageType::ReadyToStart);
+            write_message_queue.enqueue(std::move(ready_to_start));
+            ready_to_start_sent = true;
+        }
         for(Message& message: read_message_queue) {
             switch(message.type()) {
                 case MessageType::ConnectionAccepted: {
                     message >> this->server_user_number;
                     connection_accepted = true;
                     connection_accepted_written = false;
+                    break;
+                }
+                case MessageType::ReadyToStart: {
+                    ready_to_start_received = true;
+                    break;
                 }
                 default: {
                     break;
