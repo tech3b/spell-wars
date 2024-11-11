@@ -1,28 +1,32 @@
 cmake_minimum_required(VERSION 3.10)
 project(client)
 
-set(BOOST_INCLUDE_LIBRARIES asio)
-
 set(CMAKE_CXX_STANDARD 23)
 
-find_package(Boost 1.86 COMPONENTS asio)  # Specify required components
+# Define SDL2 paths relative to the project
+set(SDL2_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/SDL2/include")
 
-if(NOT Boost_FOUND)
-    message(WARNING "Boost not found. Attempting to fetch Boost...")
-
-    # Fetch Boost if not found
-    include(FetchContent)
-    FetchContent_Declare(
-        Boost
-        URL https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.7z
-        DOWNLOAD_EXTRACT_TIMESTAMP ON
-        OVERRIDE_FIND_PACKAGE
-      )
-    FetchContent_MakeAvailable(boost)
+if (WIN32)
+    set(SDL2_LIBRARY_PATH "${CMAKE_SOURCE_DIR}/external/SDL2/lib/win32/SDL2.dll")
+    set(SDL2_LINK_LIB "${CMAKE_SOURCE_DIR}/external/SDL2/lib/win32/SDL2.lib")
+elseif (APPLE)
+    set(SDL2_LIBRARY_PATH "${CMAKE_SOURCE_DIR}/external/SDL2/lib/macos/libSDL2.dylib")
+    set(SDL2_LINK_LIB "${CMAKE_SOURCE_DIR}/external/SDL2/lib/macos/libSDL2.dylib")
+elseif (UNIX)
+    set(SDL2_LIBRARY_PATH "${CMAKE_SOURCE_DIR}/external/SDL2/lib/linux/libSDL2.so")
+    set(SDL2_LINK_LIB "${CMAKE_SOURCE_DIR}/external/SDL2/lib/linux/libSDL2.so")
 endif()
 
-find_package(Boost 1.86 REQUIRED COMPONENTS asio)
+set(BOOST_ASIO_ROOT "${CMAKE_SOURCE_DIR}/external/boost_asio")
+
+include_directories(${SDL2_INCLUDE_DIR})
+include_directories(${BOOST_ASIO_ROOT})
 
 add_executable(client src/main.cpp)
 
-target_link_libraries(client Boost::asio)
+target_link_libraries(client ${SDL2_LINK_LIB})
+
+add_custom_command(TARGET client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${SDL2_LIBRARY_PATH}"
+    $<TARGET_FILE_DIR:client>)
