@@ -5,78 +5,113 @@
 
 class JustCreatedGame : public GameState {
 private:
-    bool connection_request_sent;
-    bool connection_request_sent_written;
-    bool connection_accepted;
-    bool connection_accepted_written;
+    enum class State {
+        JustCreated,
+        ConnectionSent,
+        ConnectionAccepted,
+        ReadyToStartReceived,
+        ReadyToStartShouldBeSent,
+        ReadyToStartSent
+    };
+
+    State state;
+    bool reacted;
     int32_t server_user_number;
     int32_t client_user_number;
 
-    bool need_to_send_ready_to_start;
-    bool ready_to_start_sent;
+    void update_state(State updated_state) {
+        state = updated_state;
+        reacted = false;
+    }
 
-    bool ready_to_start_received;
-
+    void react_once(const std::function<void()>& f) {
+        if(!reacted) {
+            f();
+            reacted = true;
+        }
+    }
 public:
     JustCreatedGame(int32_t _client_user_number) : 
-                        connection_request_sent(false),
-                        connection_request_sent_written(false),
-                        connection_accepted(false),
-                        connection_accepted_written(true),
-                        client_user_number(_client_user_number),
-                        need_to_send_ready_to_start(false),
-                        ready_to_start_sent(false),
-                        ready_to_start_received(false) {
+                        state(State::JustCreated),
+                        reacted(false),
+                        client_user_number(_client_user_number) {
     }
 
     virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
                                                               InputState& input_state) {
-        if(!connection_accepted_written) {
-            std::cout << "Connection accepted: Welcome! You're our "<< server_user_number << " customer today!" << std::endl;
-            connection_accepted_written = true;
-        }
-        if(connection_request_sent && !connection_request_sent_written) {
-            std::cout << "Sending my number: " << client_user_number << std::endl;
-            connection_request_sent_written = true;
-        }
-        if(input_state.state_by_key(Key::ENTER) && connection_accepted && !need_to_send_ready_to_start) {
-            std::cout << "need_to_send_ready_to_start = true" << std::endl;
-            need_to_send_ready_to_start = true;
-        }
-        if(ready_to_start_received) {
-            std::cout << "moving to ReadyToStartGame" << std::endl;
-            return std::make_optional(std::make_unique<ReadyToStartGame>());
+        switch(state) {
+            case State::JustCreated:
+            case State::ReadyToStartShouldBeSent: {
+                break;
+            }
+            case State::ConnectionSent: {
+                react_once([&]() {
+                    std::cout << "ConnectionSent with number: " << client_user_number << std::endl;
+                });
+                break;
+            }
+            case State::ReadyToStartSent: {
+                react_once([]() {
+                    std::cout << "ReadyToStartSent" << std::endl;
+                });
+                break;
+            }
+            case State::ReadyToStartReceived: {
+                std::cout << "moving to ReadyToStartGame" << std::endl;
+                return std::make_optional(std::make_unique<ReadyToStartGame>());
+            }
+            case State::ConnectionAccepted: {
+                react_once([&]() {
+                    std::cout << "ConnectionAccepted" << std::endl;
+                });
+                if(input_state.state_by_key(Key::ENTER)) {
+                    std::cout << "ReadyToStartShouldBeSent" << std::endl;
+                    update_state(State::ReadyToStartShouldBeSent);
+                }
+                break;
+            }
         }
         return {};
     }
 
     virtual void io_updates(TFQueue<Message>& read_message_queue, TFQueue<Message>& write_message_queue) {
-        if(!connection_request_sent) {
-            Message connection_requested_message(MessageType::ConnectionRequested);
-            connection_requested_message << client_user_number;
-            write_message_queue.enqueue(std::move(connection_requested_message));
-            connection_request_sent = true;
-        }
-        if(need_to_send_ready_to_start && !ready_to_start_sent) {
-            Message ready_to_start(MessageType::ReadyToStart);
-            write_message_queue.enqueue(std::move(ready_to_start));
-            ready_to_start_sent = true;
-        }
-        for(Message& message: read_message_queue) {
-            switch(message.type()) {
-                case MessageType::ConnectionAccepted: {
-                    message >> this->server_user_number;
-                    connection_accepted = true;
-                    connection_accepted_written = false;
-                    break;
+        switch (state)
+        {
+            case State::JustCreated: {
+                update_state(State::ConnectionSent);
+                Message connection_requested_message(MessageType::ConnectionRequested);
+                connection_requested_message << client_user_number;
+                write_message_queue.enqueue(std::move(connection_requested_message));
+                return;
+            }            
+            case State::ConnectionSent: {
+                for(Message message: read_message_queue) {
+                    switch(message.type()) {
+                        case MessageType::ConnectionAccepted:
+                            message >> this->server_user_number;
+                            update_state(State::ConnectionAccepted);
+                            return;
+                    }
                 }
-                case MessageType::ReadyToStart: {
-                    ready_to_start_received = true;
-                    break;
+                break;
+            }
+            case State::ConnectionAccepted:
+            case State::ReadyToStartSent: {
+                for(Message message: read_message_queue) {
+                    switch(message.type()) {
+                        case MessageType::ReadyToStart:
+                            update_state(State::ReadyToStartReceived);
+                            return;
+                    }
                 }
-                default: {
-                    break;
-                }
+            }
+            case State::ReadyToStartReceived:
+                break;
+            case State::ReadyToStartShouldBeSent: {
+                update_state(State::ReadyToStartSent);
+                Message ready_to_start(MessageType::ReadyToStart);
+                write_message_queue.enqueue(std::move(ready_to_start));
+                break;
             }
         }
     }

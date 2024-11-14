@@ -49,12 +49,13 @@ public:
 
         Iterator() : queue(nullptr) {}
 
-        T& operator*() {
-            return queue->front().value();
+        T operator*() {
+            T result = std::move(queue->front().value());
+            queue->pop();
+            return result;
         }
 
         Iterator& operator++() {
-            queue->pop();
             if (queue->empty() || !queue->front().has_value()) {
                 queue = nullptr;
             }
