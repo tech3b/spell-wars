@@ -80,7 +80,7 @@ impl GameState for RunningGame {
                         }
                     });
                 }
-                UserState::AcceptedFromUser(s1, s2) => continue,
+                UserState::AcceptedFromUser(_, _) => continue,
                 UserState::WaitingToSend(duration) => {
                     if *duration > Duration::from_secs(2) {
                         user_to_sender.lock().unwrap().get(user).map(|sender| {
