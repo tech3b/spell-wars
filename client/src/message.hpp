@@ -61,7 +61,7 @@ public:
     }
 
     std::tuple<uint32_t, uint32_t> prepare_inputs() {
-        return std::tuple(static_cast<uint32_t>(messageType), static_cast<uint32_t>(data.size()));
+        return { static_cast<uint32_t>(messageType), static_cast<uint32_t>(data.size()) };
     }
 
     friend Message& operator<<(Message& msg, const std::string& input) {

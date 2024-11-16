@@ -63,7 +63,7 @@ std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socke
               read_message_queue,
               lost_connection);
 
-    return std::tuple(std::move(writer), std::move(reader), std::move(game));
+    return { std::move(writer), std::move(reader), std::move(game) };
 }
 
 void game_loop(std::chrono::duration<double> rate, Game& game, std::unordered_map<SDL_Scancode, Key>& key_map) {

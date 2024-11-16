@@ -6,41 +6,26 @@ use std::{
 
 use crate::message::{Message, MessageType};
 
-use super::ready_to_start::ReadyToStartGame;
+use super::{reaction::Reaction, ready_to_start::ReadyToStartGame};
 
 use super::GameState;
 
-enum UserState {
+#[derive(Debug)]
+enum OverallState {
+    AcceptingUsers(HashMap<i32, AcceptingUserState>, bool),
+    SendingReadyToStart(HashSet<i32>),
+    ReadyToStartSent(HashSet<i32>),
+}
+
+#[derive(Debug)]
+enum AcceptingUserState {
     Connected,
     ConnectionAccepted(Reaction),
     ReadyToStartReceived,
-    ReadyToStartSent(Reaction),
-}
-
-enum OverallState {
-    AcceptingUsers,
-    SendingReadyToStart,
-    ReadyToStartSent,
-}
-
-struct Reaction(bool);
-
-impl Reaction {
-    pub fn new() -> Self {
-        Reaction(false)
-    }
-
-    pub fn react_once<F: FnOnce() -> ()>(&mut self, f: F) {
-        if !self.0 {
-            f();
-            self.0 = true;
-        }
-    }
 }
 
 pub struct JustCreatedGame {
     state: OverallState,
-    user_to_state: HashMap<i32, UserState>,
     users: Arc<Mutex<HashSet<i32>>>,
     stop_accepting_users: Arc<Mutex<bool>>,
 }
@@ -48,8 +33,7 @@ pub struct JustCreatedGame {
 impl JustCreatedGame {
     pub fn new(users: Arc<Mutex<HashSet<i32>>>, stop_accepting_users: Arc<Mutex<bool>>) -> Self {
         JustCreatedGame {
-            state: OverallState::AcceptingUsers,
-            user_to_state: HashMap::new(),
+            state: OverallState::AcceptingUsers(HashMap::new(), false),
             users,
             stop_accepting_users,
         }
@@ -58,42 +42,35 @@ impl JustCreatedGame {
 
 impl GameState for JustCreatedGame {
     fn elapsed(&mut self, _: Duration) -> Option<Box<dyn GameState>> {
-        match self.state {
-            OverallState::AcceptingUsers => {
-                for (user, state) in self.user_to_state.iter_mut() {
+        match &mut self.state {
+            OverallState::AcceptingUsers(users, final_call) => {
+                for (user, state) in users.iter_mut() {
                     match state {
-                        UserState::Connected => continue,
-                        UserState::ConnectionAccepted(reaction) => {
+                        AcceptingUserState::Connected => continue,
+                        AcceptingUserState::ConnectionAccepted(reaction) => {
                             reaction.react_once(|| {
                                 println!("message from {user}: ConnectionRequested");
                             });
                         }
-                        UserState::ReadyToStartReceived => {
-                            *self.stop_accepting_users.lock().unwrap() = true;
-                            println!("ReadyToStartReceived from {user}");
-                            self.state = OverallState::SendingReadyToStart;
-                        }
-                        UserState::ReadyToStartSent(reaction) => {
-                            reaction.react_once(|| {
-                                println!("ReadyToStartSent to {user}");
-                            });
+                        AcceptingUserState::ReadyToStartReceived => {
+                            if !*final_call {
+                                *self.stop_accepting_users.lock().unwrap() = true;
+                                println!("ReadyToStartReceived from {user}");
+                                *final_call = true;
+                            }
                         }
                     }
                 }
             }
-            OverallState::SendingReadyToStart => (),
-            OverallState::ReadyToStartSent => {
+            OverallState::SendingReadyToStart(_) => (),
+            OverallState::ReadyToStartSent(users) => {
                 println!("moving to ReadyToStartGame");
-                return Some(Box::new(ReadyToStartGame::new(
-                    self.user_to_state
-                        .iter()
-                        .filter(|(_, state)| matches!(state, UserState::ReadyToStartSent(_)))
-                        .map(|(user, _)| *user)
-                        .collect(),
-                )));
+                return Some(Box::new(ReadyToStartGame::new(std::mem::replace(
+                    users,
+                    HashSet::new(),
+                ))));
             }
         }
-
         return None;
     }
 
@@ -102,15 +79,12 @@ impl GameState for JustCreatedGame {
         user_to_sender: &Mutex<HashMap<i32, mpsc::Sender<Message>>>,
         user_to_receiver: &Mutex<HashMap<i32, mpsc::Receiver<Message>>>,
     ) {
-        match self.state {
-            OverallState::AcceptingUsers => {
+        match &mut self.state {
+            OverallState::AcceptingUsers(users, final_call) => {
                 for user in self.users.lock().unwrap().iter() {
-                    let user_state = self
-                        .user_to_state
-                        .entry(*user)
-                        .or_insert(UserState::Connected);
+                    let user_state = users.entry(*user).or_insert(AcceptingUserState::Connected);
                     match user_state {
-                        UserState::Connected => {
+                        AcceptingUserState::Connected => {
                             user_to_receiver.lock().unwrap().get(user).map(|receiver| {
                                 for message in receiver.try_iter() {
                                     match message.message_type() {
@@ -122,8 +96,9 @@ impl GameState for JustCreatedGame {
                                                 |sender| sender.send(accepted_message).unwrap(),
                                             );
 
-                                            *user_state =
-                                                UserState::ConnectionAccepted(Reaction::new());
+                                            *user_state = AcceptingUserState::ConnectionAccepted(
+                                                Reaction::new(),
+                                            );
                                             break;
                                         }
                                         _ => continue,
@@ -131,12 +106,12 @@ impl GameState for JustCreatedGame {
                                 }
                             });
                         }
-                        UserState::ConnectionAccepted(_) => {
+                        AcceptingUserState::ConnectionAccepted(_) => {
                             user_to_receiver.lock().unwrap().get(user).map(|receiver| {
                                 for message in receiver.try_iter() {
                                     match message.message_type() {
                                         MessageType::ReadyToStart => {
-                                            *user_state = UserState::ReadyToStartReceived;
+                                            *user_state = AcceptingUserState::ReadyToStartReceived;
                                             break;
                                         }
                                         _ => continue,
@@ -144,29 +119,37 @@ impl GameState for JustCreatedGame {
                                 }
                             });
                         }
-                        UserState::ReadyToStartReceived | UserState::ReadyToStartSent(_) => {
-                            continue
-                        }
+                        AcceptingUserState::ReadyToStartReceived => (),
                     }
                 }
-            }
-            OverallState::SendingReadyToStart => {
-                for (user, state) in self.user_to_state.iter_mut() {
-                    match state {
-                        UserState::ConnectionAccepted(_) | UserState::ReadyToStartReceived => {
-                            user_to_sender.lock().unwrap().get(user).map(|sender| {
-                                let ready_to_start_message =
-                                    Message::new(MessageType::ReadyToStart);
-                                sender.send(ready_to_start_message).unwrap();
-                                *state = UserState::ReadyToStartSent(Reaction::new());
-                            });
-                        }
-                        UserState::ReadyToStartSent(_) | UserState::Connected => continue,
-                    }
+                if *final_call {
+                    self.state = OverallState::SendingReadyToStart(
+                        users
+                            .iter()
+                            .filter(|(_, state)| {
+                                matches!(
+                                    **state,
+                                    AcceptingUserState::ReadyToStartReceived
+                                        | AcceptingUserState::ConnectionAccepted(_)
+                                )
+                            })
+                            .map(|(user, _)| *user)
+                            .collect(),
+                    );
                 }
-                self.state = OverallState::ReadyToStartSent;
             }
-            OverallState::ReadyToStartSent => (),
+            OverallState::SendingReadyToStart(users) => {
+                for user in users.iter() {
+                    user_to_sender.lock().unwrap().get(user).map(|sender| {
+                        let ready_to_start_message = Message::new(MessageType::ReadyToStart);
+                        sender.send(ready_to_start_message).unwrap();
+                    });
+                }
+
+                self.state =
+                    OverallState::ReadyToStartSent(std::mem::replace(users, HashSet::new()));
+            }
+            OverallState::ReadyToStartSent(_) => (),
         }
     }
 }

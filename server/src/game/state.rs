@@ -7,6 +7,7 @@ use std::{
 use crate::message::Message;
 
 pub mod just_created;
+pub mod reaction;
 pub mod ready_to_start;
 pub mod running;
 

@@ -6,12 +6,11 @@ use std::{
 
 use crate::message::{Message, MessageType};
 
-use super::GameState;
+use super::{reaction::Reaction, GameState};
 
 enum UserState {
-    WaitingForUser,
-    AcceptedFromUser(String, String),
-    WaitingToSend(Duration),
+    WaitingForStub,
+    StubAccepted(String, String, Duration, Reaction),
 }
 
 pub struct RunningGame {
@@ -23,7 +22,17 @@ impl RunningGame {
         RunningGame {
             user_to_user_state: users
                 .iter()
-                .map(|user| (*user, UserState::WaitingToSend(Duration::ZERO)))
+                .map(|user| {
+                    (
+                        *user,
+                        UserState::StubAccepted(
+                            String::from(""),
+                            String::from(""),
+                            Duration::ZERO,
+                            Reaction::new_reacted(true),
+                        ),
+                    )
+                })
                 .collect(),
         }
     }
@@ -40,12 +49,11 @@ impl GameState for RunningGame {
     fn elapsed(&mut self, elapsed: Duration) -> Option<Box<dyn GameState>> {
         for (user, state) in self.user_to_user_state.iter_mut() {
             match state {
-                UserState::WaitingForUser => {}
-                UserState::AcceptedFromUser(s1, s2) => {
-                    println!("message from {user}: s1: {s1}, s2: {s2}");
-                    *state = UserState::WaitingToSend(Duration::ZERO);
-                }
-                UserState::WaitingToSend(duration) => {
+                UserState::WaitingForStub => {}
+                UserState::StubAccepted(s1, s2, duration, reaction) => {
+                    reaction.react_once(|| {
+                        println!("message from {user}: s1: {s1}, s2: {s2}");
+                    });
                     *duration += elapsed;
                 }
             }
@@ -60,7 +68,7 @@ impl GameState for RunningGame {
     ) {
         for (user, state) in self.user_to_user_state.iter_mut() {
             match state {
-                UserState::WaitingForUser => {
+                UserState::WaitingForStub => {
                     user_to_receiver.lock().unwrap().get(user).map(|receiver| {
                         for mut message in receiver.try_iter() {
                             match message.message_type() {
@@ -73,20 +81,24 @@ impl GameState for RunningGame {
                                         .pop_string()
                                         .ok_or(String::from("Can't pop string"))
                                         .unwrap();
-                                    *state = UserState::AcceptedFromUser(s1, s2);
+                                    *state = UserState::StubAccepted(
+                                        s1,
+                                        s2,
+                                        Duration::ZERO,
+                                        Reaction::new(),
+                                    );
                                 }
                                 _ => continue,
                             }
                         }
                     });
                 }
-                UserState::AcceptedFromUser(_, _) => continue,
-                UserState::WaitingToSend(duration) => {
+                UserState::StubAccepted(_, _, duration, _) => {
                     if *duration > Duration::from_secs(2) {
                         user_to_sender.lock().unwrap().get(user).map(|sender| {
                             sender.send(Self::create_stub_message()).unwrap();
                         });
-                        *state = UserState::WaitingForUser
+                        *state = UserState::WaitingForStub
                     }
                 }
             }

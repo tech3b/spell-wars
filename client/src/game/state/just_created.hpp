@@ -54,7 +54,7 @@ public:
             return {};
         }, [&](ConnectionAccepted& connection_accepted) -> std::optional<std::unique_ptr<GameState>> {
             connection_accepted.connection_accepted.react_once([&]() {
-                std::cout << "ConnectionAccepted" << std::endl;
+                std::cout << "ConnectionAccepted with number: " << server_user_number << std::endl;
             });
             if(connection_accepted.ready_to_start_sent){
                 connection_accepted.ready_to_start_sent_reaction.react_once([&]() {
@@ -68,6 +68,7 @@ public:
             }
             return {};
         }, [&](ReadyToStart& ready_to_start) -> std::optional<std::unique_ptr<GameState>> {
+            std::cout << "Moving to ReadyToStartGame" << std::endl;
             return std::make_unique<ReadyToStartGame>();
         }}, state);
     }
