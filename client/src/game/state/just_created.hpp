@@ -5,6 +5,10 @@
 #include "reaction.hpp"
 #include "overloaded.hpp"
 
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_sdlrenderer2.h>
+
 class JustCreatedGame : public GameState {
 private:
     struct JustCreated {
@@ -18,20 +22,22 @@ private:
     };
 
     struct ConnectionAccepted {
-        Reaction connection_accepted;
-        Reaction ready_to_start_sent_reaction;
-        bool ready_to_start_should_be_sent;
-        bool ready_to_start_sent;
+        std::unordered_map<int32_t, bool> user_to_state;
+        bool state_changed;
+        bool is_ready;
 
-        ConnectionAccepted()
-            : connection_accepted(),
-              ready_to_start_sent_reaction(),
-              ready_to_start_sent(false),
-              ready_to_start_should_be_sent(false) {
+        ConnectionAccepted(std::unordered_map<int32_t, bool>&& _user_to_state)
+            : user_to_state(std::move(_user_to_state)),
+              state_changed(false),
+              is_ready(false) {
         }
     };
 
     struct ReadyToStart {
+        std::unordered_map<int32_t, bool> user_to_state;
+
+        ReadyToStart(std::unordered_map<int32_t, bool>&& _user_to_state) : user_to_state(std::move(_user_to_state)){
+        }
     };
 
     std::variant<JustCreated, ConnectionRequested, ConnectionAccepted, ReadyToStart> state;
@@ -44,7 +50,8 @@ public:
     }
 
     virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
-                                                              InputState& input_state) {
+                                                              InputState& input_state,
+                                                              SDL_Renderer* renderer) {
         return std::visit(overloaded{[&](JustCreated& just_created) -> std::optional<std::unique_ptr<GameState>> {
             return {};
         }, [&](ConnectionRequested& connection_requested) -> std::optional<std::unique_ptr<GameState>> {
@@ -52,20 +59,31 @@ public:
                 std::cout << "ConnectionSent with number: " << client_user_number << std::endl;
             });
             return {};
-        }, [&](ConnectionAccepted& connection_accepted) -> std::optional<std::unique_ptr<GameState>> {
-            connection_accepted.connection_accepted.react_once([&]() {
-                std::cout << "ConnectionAccepted with number: " << server_user_number << std::endl;
-            });
-            if(connection_accepted.ready_to_start_sent){
-                connection_accepted.ready_to_start_sent_reaction.react_once([&]() {
-                    std::cout << "ReadyToStartSent" << std::endl;
-                });
-            } else {
-                if(!connection_accepted.ready_to_start_should_be_sent && input_state.state_by_key(Key::ENTER)) {
-                    std::cout << "ReadyToStartShouldBeSent" << std::endl;
-                    connection_accepted.ready_to_start_should_be_sent = true;
-                }
+        }, [&](ConnectionAccepted& connection_accepted) -> std::optional<std::unique_ptr<GameState>> {    
+            ImGui_ImplSDLRenderer2_NewFrame();
+            ImGui_ImplSDL2_NewFrame();
+            ImGui::NewFrame();
+            
+            auto millis_elapsed = std::chrono::duration<double, std::milli>(elapsed).count();
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", millis_elapsed, 1000.0f / millis_elapsed);
+            ImGui::Text("Me %d", this->server_user_number);
+            ImGui::SameLine();
+            if (ImGui::Checkbox("##Checkbox", &connection_accepted.is_ready)) {
+                connection_accepted.state_changed = true;
             }
+
+            for (auto& pair : connection_accepted.user_to_state) {
+                ImGui::BeginDisabled();
+                bool is_checked = pair.second != 0;
+                ImGui::Text("User %d", pair.first);
+                ImGui::SameLine();
+                ImGui::Checkbox(("##Checkbox" + std::to_string(pair.first)).c_str(), &is_checked);
+                ImGui::EndDisabled();
+            }
+            
+            ImGui::Render();
+            ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+
             return {};
         }, [&](ReadyToStart& ready_to_start) -> std::optional<std::unique_ptr<GameState>> {
             std::cout << "Moving to ReadyToStartGame" << std::endl;
@@ -84,22 +102,53 @@ public:
                 switch(message.type()) {
                     case MessageType::ConnectionAccepted:
                         message >> this->server_user_number;
-                        state = ConnectionAccepted();
+                        uint8_t user_states_len;
+                        message >> user_states_len;
+
+                        std::unordered_map<int32_t, bool> user_to_state;
+
+                        for(int i = 0; i < user_states_len; i++) {
+                            uint8_t is_ready;
+                            message >> is_ready;
+                            int32_t user;
+                            message >> user;
+                            user_to_state[user] = is_ready != 0;
+                        }
+
+                        state = ConnectionAccepted(std::move(user_to_state));
                         return;
                 }
             }
         }, [&](ConnectionAccepted& connection_accepted) {
-            if(connection_accepted.ready_to_start_should_be_sent) {
-                connection_accepted.ready_to_start_should_be_sent = false;
-                connection_accepted.ready_to_start_sent = true;
-                Message ready_to_start(MessageType::ReadyToStart);
+            if(connection_accepted.state_changed) {
+                connection_accepted.state_changed = false;
+                Message ready_to_start(MessageType::ReadyToStartChanged);
+                ready_to_start << (uint8_t)connection_accepted.is_ready;
                 write_message_queue.enqueue(std::move(ready_to_start));
             }
             for(Message message: read_message_queue) {
                 switch(message.type()) {
-                    case MessageType::ReadyToStart:
-                        state = ReadyToStart();
+                    case MessageType::UserStatusUpdate: {
+                        uint8_t updates_len;
+                        message >> updates_len;
+
+                        for(int i = 0; i < updates_len; i++) {
+                            uint8_t user_status;
+                            message >> user_status;
+                            int32_t user;
+                            message >> user;
+                            if(user_status == 2) {
+                                connection_accepted.user_to_state.erase(user);
+                            } else {
+                                connection_accepted.user_to_state[user] = user_status != 0;
+                            }
+                        }
+                        break;
+                    }
+                    case MessageType::ReadyToStart: {
+                        state = ReadyToStart(std::move(connection_accepted.user_to_state));
                         return;
+                    }
                 }
             }
         }, [&](ReadyToStart& ready_to_start) {

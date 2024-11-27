@@ -1,6 +1,6 @@
 use std::{
-    collections::HashMap,
-    sync::{mpsc, Mutex},
+    collections::{HashMap, HashSet},
+    sync::mpsc,
     time::Duration,
 };
 
@@ -16,7 +16,8 @@ pub trait GameState {
 
     fn io_updates(
         &mut self,
-        user_to_sender: &Mutex<HashMap<i32, mpsc::Sender<Message>>>,
-        user_to_receiver: &Mutex<HashMap<i32, mpsc::Receiver<Message>>>,
+        user_to_sender: &HashMap<i32, mpsc::Sender<Message>>,
+        user_to_receiver: &HashMap<i32, mpsc::Receiver<Message>>,
+        users: &HashSet<i32>,
     );
 }

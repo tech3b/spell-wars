@@ -1,32 +1,22 @@
 use std::{
-    collections::HashMap,
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
 use state::GameState;
 
-use crate::message::Message;
+use crate::Users;
 
 pub mod state;
 
 pub struct Game {
-    user_to_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
-    user_to_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
+    users: Arc<Mutex<Users>>,
     game_state: Box<dyn GameState>,
 }
 
 impl Game {
-    pub fn new(
-        user_to_sender: Arc<Mutex<HashMap<i32, mpsc::Sender<Message>>>>,
-        user_to_receiver: Arc<Mutex<HashMap<i32, mpsc::Receiver<Message>>>>,
-        game_state: Box<dyn GameState>,
-    ) -> Game {
-        Game {
-            user_to_sender,
-            user_to_receiver,
-            game_state,
-        }
+    pub fn new(users: Arc<Mutex<Users>>, game_state: Box<dyn GameState>) -> Game {
+        Game { users, game_state }
     }
 
     pub fn elapsed(&mut self, elapsed: Duration) {
@@ -36,7 +26,11 @@ impl Game {
     }
 
     pub fn io_updates(&mut self) {
-        self.game_state
-            .io_updates(&self.user_to_sender, &self.user_to_receiver);
+        let locked_users = self.users.lock().unwrap();
+        self.game_state.io_updates(
+            &locked_users.user_to_write_sender,
+            &locked_users.user_to_read_receiver,
+            &locked_users.users,
+        );
     }
 }

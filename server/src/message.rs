@@ -7,10 +7,12 @@ pub enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
     ConnectionRejected = 3,
-    ReadyToStart = 4,
-    StubMessage = 5,
-    GameAboutToStart = 6,
-    GameStarting = 7,
+    UserStatusUpdate = 4,
+    ReadyToStartChanged = 5,
+    ReadyToStart = 6,
+    StubMessage = 7,
+    GameAboutToStart = 8,
+    GameStarting = 9,
 }
 
 impl From<u32> for MessageType {
@@ -19,10 +21,12 @@ impl From<u32> for MessageType {
             1 => MessageType::ConnectionRequested,
             2 => MessageType::ConnectionAccepted,
             3 => MessageType::ConnectionRejected,
-            4 => MessageType::ReadyToStart,
-            5 => MessageType::StubMessage,
-            6 => MessageType::GameAboutToStart,
-            7 => MessageType::GameStarting,
+            4 => MessageType::UserStatusUpdate,
+            5 => MessageType::ReadyToStartChanged,
+            6 => MessageType::ReadyToStart,
+            7 => MessageType::StubMessage,
+            8 => MessageType::GameAboutToStart,
+            9 => MessageType::GameStarting,
             _ => panic!("Unknown MessageType value: {value}!"),
         }
     }

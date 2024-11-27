@@ -2,19 +2,18 @@
 
 #include "../state.hpp"
 #include "running.hpp"
-#include "reaction.hpp"
 #include "overloaded.hpp"
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_sdlrenderer2.h>
 
 class ReadyToStartGame : public GameState {
 private:
     struct WaitingForStart {
-        Reaction reaction;
         uint8_t seconds_before_start;
+        bool seconds_received;
 
-        WaitingForStart(uint8_t _seconds_before_start) : reaction(), seconds_before_start(_seconds_before_start) {
-        }
-
-        WaitingForStart() : reaction(true), seconds_before_start() {
+        WaitingForStart() : seconds_before_start(), seconds_received(false) {
         }
     };
 
@@ -28,12 +27,25 @@ public:
     }
 
     virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
-                                                              InputState& input_state) {
+                                                              InputState& input_state,
+                                                              SDL_Renderer* renderer) {
 
         return std::visit(overloaded{[&](WaitingForStart& waiting_for_start) -> std::optional<std::unique_ptr<GameState>> {
-            waiting_for_start.reaction.react_once([&]() {
-                std::cout << (int)waiting_for_start.seconds_before_start << " seconds before start" << std::endl;
-            });
+            ImGui_ImplSDLRenderer2_NewFrame();
+            ImGui_ImplSDL2_NewFrame();
+            ImGui::NewFrame();
+            
+            auto millis_elapsed = std::chrono::duration<double, std::milli>(elapsed).count();
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", millis_elapsed, 1000.0f / millis_elapsed);
+            if(!waiting_for_start.seconds_received) {
+                ImGui::Text("About to start: get ready");
+            } else {
+                ImGui::Text("About to start: %d", waiting_for_start.seconds_before_start);
+            }
+            
+            ImGui::Render();
+            ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+
             return {};
         }, [&](Starting& starting) -> std::optional<std::unique_ptr<GameState>> {
             std::cout << "moving to RunningGame" << std::endl;
@@ -48,7 +60,8 @@ public:
                     case MessageType::GameAboutToStart: {
                         uint8_t seconds_before_start;
                         message >> seconds_before_start;
-                        state = WaitingForStart(seconds_before_start);
+                        waiting_for_start.seconds_before_start = seconds_before_start;
+                        waiting_for_start.seconds_received = true;
                         return;
                     }
                     case MessageType::GameStarting: {

@@ -10,10 +10,12 @@ enum MessageType {
     ConnectionRequested = 1,
     ConnectionAccepted = 2,
     ConnectionRejected = 3,
-    ReadyToStart = 4,
-    StubMessage = 5,
-    GameAboutToStart = 6,
-    GameStarting = 7,
+    UserStatusUpdate = 4,
+    ReadyToStartChanged = 5,
+    ReadyToStart = 6,
+    StubMessage = 7,
+    GameAboutToStart = 8,
+    GameStarting = 9,
 };
 
 class Message {

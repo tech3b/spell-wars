@@ -33,8 +33,8 @@ public:
         return lost_connection->test();
     }
 
-    void elapsed(std::chrono::system_clock::duration& elapsed, InputState& input_state) {
-        auto updated_state = game_state->elapsed(elapsed, input_state);
+    void elapsed(std::chrono::system_clock::duration& elapsed, InputState& input_state, SDL_Renderer* renderer) {
+        auto updated_state = game_state->elapsed(elapsed, input_state, renderer);
         if(updated_state.has_value()) {
             game_state = std::move(updated_state.value());
         }

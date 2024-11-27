@@ -15,95 +15,30 @@
 #include "game/input_state.hpp"
 #include "tfqueue.hpp"
 #include "game/state/just_created.hpp"
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_sdlrenderer2.h>
 
+void game_loop(std::chrono::duration<double> rate, Game& game, std::unordered_map<SDL_Scancode, Key>& key_map, SDL_Window *window, ImGuiIO& io, SDL_Renderer* renderer);
+std::tuple<std::thread, std::thread, Game> init_game(std::shared_ptr<boost::asio::ip::tcp::socket> socket, SDL_Renderer* renderer);
 
-std::tuple<std::thread, std::thread, Game> init_game(boost::asio::ip::tcp::socket&& socket_value) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distrib(0, 100);
-
-    auto socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket_value));
-
-    auto write_message_queue = std::make_shared<TFQueue<Message>>();
-    auto read_message_queue = std::make_shared<TFQueue<Message>>();
-    auto lost_connection = std::make_shared<std::atomic_flag>();
-
-    std::thread writer([=]() {
-        while(true) {
-            try {
-                auto could_be_message = write_message_queue->dequeue();
-                if(!could_be_message.has_value()) {
-                    std::cout << "no message found in queue, finishing" << std::endl;
-                    break;
-                }
-                could_be_message.value().write_to(*socket);
-            } catch (const std::exception& e) {
-                std::cerr << "Error in writer thread: " << e.what() << std::endl;
-                lost_connection->test_and_set();
-                break;
-            }
-        }
-    });
-    std::thread reader([=]() {
-        while(true) {
-            try {
-                auto message = read_from(*socket);
-                read_message_queue->enqueue(std::move(message));
-            } catch (const std::exception& e) {
-                std::cerr << "Error in reader thread: " << e.what() << std::endl;
-                lost_connection->test_and_set();
-                write_message_queue->finish();
-                break;
-            }
-        }
-    });
-
-    Game game(std::make_unique<JustCreatedGame>(distrib(gen)),
-              write_message_queue,
-              read_message_queue,
-              lost_connection);
-
-    return { std::move(writer), std::move(reader), std::move(game) };
-}
-
-void game_loop(std::chrono::duration<double> rate, Game& game, std::unordered_map<SDL_Scancode, Key>& key_map) {
-    auto start = std::chrono::system_clock::now();
-    auto start_io = start;
-
-    InputState inputState;
-
-    while(true) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_KEYDOWN) {
-                auto it = key_map.find(event.key.keysym.scancode);
-                if (it != key_map.end()) {
-                    inputState.update_state(it->second, true);
-                }
-            }
-            if (event.type == SDL_KEYUP) {
-                auto it = key_map.find(event.key.keysym.scancode);
-                if (it != key_map.end()) {
-                    inputState.update_state(it->second, false);
-                }
-            }
-        }
-        auto new_start = std::chrono::system_clock::now();
-
-        auto elapsed = new_start - start;
-        auto elapsed_io = new_start - start_io;
-
-        game.elapsed(elapsed, inputState);
-
-        if(elapsed_io > rate) {
-            if(game.is_lost_connection()) {
-                break;
-            }
-            game.io_updates();
-            start_io = new_start;
-        }
-        start = new_start;
+int select_device() {
+    int numRenderDrivers = SDL_GetNumRenderDrivers();
+    if (numRenderDrivers < 1) {
+        std::cerr << "No render drivers available: " << SDL_GetError() << std::endl;
     }
+
+    int device = -1;
+    for (int i = 0; i < numRenderDrivers; i++) {
+        SDL_RendererInfo info;
+        if (SDL_GetRenderDriverInfo(i, &info) == 0) {
+            std::cout << "Renderer " << i << ": " << info.name << std::endl;
+        }
+        if (std::string(info.name) == "direct3d12") {
+            device = i;
+        }
+    }
+    return device;
 }
 
 int main(int argc, char* argv[]) {
@@ -154,6 +89,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
         return 1;
     }
+
     SDL_Window *window = SDL_CreateWindow(
         "SDL2 Keyboard Input", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         800, 600, SDL_WINDOW_SHOWN
@@ -164,6 +100,19 @@ int main(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, select_device(), SDL_RENDERER_ACCELERATED);
+
+    SDL_RendererInfo renderer_info;
+    SDL_GetRendererInfo(renderer, &renderer_info);
+    std::cout << "Renderer: " << renderer_info.name << std::endl;
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+
+    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer2_Init(renderer);
 
     auto rate = std::chrono::duration<double>(1.0 / 30);
     // Define the server IP address and port
@@ -180,21 +129,124 @@ int main(int argc, char* argv[]) {
 
         boost::asio::connect(socket, endpoints);
 
-        auto init_result = init_game(std::move(socket));
+        auto socket_ptr = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
-        game_loop(rate, std::get<2>(init_result), key_map);
+        auto init_result = init_game(socket_ptr, renderer);
+
+        game_loop(rate, std::get<2>(init_result), key_map, window, io, renderer);
+
+        socket_ptr->close();
 
         std::get<0>(init_result).join();
         std::get<1>(init_result).join();
-
-        std::cout << "Main loop is finished, please press enter" << std::endl;
-        std::cin.get();
-
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
 
+    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+std::tuple<std::thread, std::thread, Game> init_game(std::shared_ptr<boost::asio::ip::tcp::socket> socket, SDL_Renderer* renderer) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> distrib(0, 100);
+
+    auto write_message_queue = std::make_shared<TFQueue<Message>>();
+    auto read_message_queue = std::make_shared<TFQueue<Message>>();
+    auto lost_connection = std::make_shared<std::atomic_flag>();
+
+    std::thread writer([=]() {
+        while(true) {
+            try {
+                auto could_be_message = write_message_queue->dequeue();
+                if(!could_be_message.has_value()) {
+                    std::cout << "no message found in queue, finishing" << std::endl;
+                    break;
+                }
+                could_be_message.value().write_to(*socket);
+            } catch (const std::exception& e) {
+                std::cerr << "Error in writer thread: " << e.what() << std::endl;
+                lost_connection->test_and_set();
+                break;
+            }
+        }
+    });
+    std::thread reader([=]() {
+        while(true) {
+            try {
+                auto message = read_from(*socket);
+                read_message_queue->enqueue(std::move(message));
+            } catch (const std::exception& e) {
+                std::cerr << "Error in reader thread: " << e.what() << std::endl;
+                lost_connection->test_and_set();
+                write_message_queue->finish();
+                break;
+            }
+        }
+    });
+
+    Game game(std::make_unique<JustCreatedGame>(distrib(gen)),
+              write_message_queue,
+              read_message_queue,
+              lost_connection);
+
+    return { std::move(writer), std::move(reader), std::move(game) };
+}
+
+void game_loop(std::chrono::duration<double> rate, Game& game, std::unordered_map<SDL_Scancode, Key>& key_map, SDL_Window *window, ImGuiIO& io, SDL_Renderer* renderer) {
+    auto start = std::chrono::system_clock::now();
+    auto start_io = start;
+
+    InputState inputState;
+    bool running = true;
+
+    while(running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL2_ProcessEvent(&event);
+            if (event.type == SDL_KEYDOWN) {
+                auto it = key_map.find(event.key.keysym.scancode);
+                if (it != key_map.end()) {
+                    inputState.update_state(it->second, true);
+                }
+            }
+            if (event.type == SDL_KEYUP) {
+                auto it = key_map.find(event.key.keysym.scancode);
+                if (it != key_map.end()) {
+                    inputState.update_state(it->second, false);
+                }
+            }
+            if (event.type == SDL_QUIT) {
+                running = false;
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 25, 25, 25, 255);
+        SDL_RenderClear(renderer);
+
+        auto new_start = std::chrono::system_clock::now();
+
+        auto elapsed = new_start - start;
+        auto elapsed_io = new_start - start_io;
+
+        game.elapsed(elapsed, inputState, renderer);
+
+        SDL_RenderPresent(renderer);
+
+        if(elapsed_io > rate) {
+            if(game.is_lost_connection()) {
+                break;
+            }
+            game.io_updates();
+            start_io = new_start;
+        }
+        start = new_start;
+    }
 }

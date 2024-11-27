@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{mpsc, Mutex},
+    sync::mpsc,
     time::Duration,
 };
 
@@ -63,13 +63,14 @@ impl GameState for RunningGame {
 
     fn io_updates(
         &mut self,
-        user_to_sender: &Mutex<HashMap<i32, mpsc::Sender<Message>>>,
-        user_to_receiver: &Mutex<HashMap<i32, mpsc::Receiver<Message>>>,
+        user_to_sender: &HashMap<i32, mpsc::Sender<Message>>,
+        user_to_receiver: &HashMap<i32, mpsc::Receiver<Message>>,
+        _: &HashSet<i32>,
     ) {
         for (user, state) in self.user_to_user_state.iter_mut() {
             match state {
                 UserState::WaitingForStub => {
-                    user_to_receiver.lock().unwrap().get(user).map(|receiver| {
+                    user_to_receiver.get(user).map(|receiver| {
                         for mut message in receiver.try_iter() {
                             match message.message_type() {
                                 MessageType::StubMessage => {
@@ -95,7 +96,7 @@ impl GameState for RunningGame {
                 }
                 UserState::StubAccepted(_, _, duration, _) => {
                     if *duration > Duration::from_secs(2) {
-                        user_to_sender.lock().unwrap().get(user).map(|sender| {
+                        user_to_sender.get(user).map(|sender| {
                             sender.send(Self::create_stub_message()).unwrap();
                         });
                         *state = UserState::WaitingForStub

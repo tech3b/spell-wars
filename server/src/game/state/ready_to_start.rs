@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{mpsc, Mutex};
+use std::sync::mpsc;
 use std::{collections::HashSet, time::Duration};
 
 use crate::message::{Message, MessageType};
@@ -54,14 +54,15 @@ impl GameState for ReadyToStartGame {
 
     fn io_updates(
         &mut self,
-        user_to_sender: &Mutex<HashMap<i32, mpsc::Sender<Message>>>,
-        user_to_receiver: &Mutex<HashMap<i32, mpsc::Receiver<Message>>>,
+        user_to_sender: &HashMap<i32, mpsc::Sender<Message>>,
+        user_to_receiver: &HashMap<i32, mpsc::Receiver<Message>>,
+        _: &HashSet<i32>,
     ) {
         match &mut self.state {
             OverallState::SecondsLeft(seconds_left, _, sent) => {
                 if !*sent {
                     for user in self.users.iter() {
-                        user_to_sender.lock().unwrap().get(user).map(|sender| {
+                        user_to_sender.get(user).map(|sender| {
                             let mut game_about_to_start =
                                 Message::new(MessageType::GameAboutToStart);
                             game_about_to_start.push(seconds_left);
@@ -77,7 +78,7 @@ impl GameState for ReadyToStartGame {
             OverallState::Starting(sent) => {
                 if !*sent {
                     for user in self.users.iter() {
-                        user_to_sender.lock().unwrap().get(user).map(|sender| {
+                        user_to_sender.get(user).map(|sender| {
                             let game_starting = Message::new(MessageType::GameStarting);
                             sender.send(game_starting).unwrap();
                         });
@@ -87,7 +88,7 @@ impl GameState for ReadyToStartGame {
             }
         }
         for user in self.users.iter() {
-            user_to_receiver.lock().unwrap().get(user).map(|receiver| {
+            user_to_receiver.get(user).map(|receiver| {
                 for _ in receiver.try_iter() {
                     // don't care about messages here
                 }
