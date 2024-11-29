@@ -5,6 +5,8 @@
 #include <imgui.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_sdlrenderer2.h>
+#include <misc/cpp/imgui_stdlib.h>
+#include <vector>
 
 class RunningGame : public GameState {
     struct WaitingForStub {
@@ -15,18 +17,16 @@ class RunningGame : public GameState {
     };
     
     struct StubAccepted {
-        std::chrono::system_clock::duration before_send;
-        std::string received1;
-        std::string received2;
-        std::string will_send1;
-        std::string will_send2;
+        std::chrono::system_clock::duration elapsed;
+        std::vector<std::string> received;
+        std::vector<std::string> will_send;
+        bool should_send;
 
-        StubAccepted(std::chrono::system_clock::duration _before_send, std::string&& _received1, std::string&& _received2, std::string&& _will_send1, std::string&& _will_send2)
-            : before_send(_before_send),
-              received1(std::move(_received1)),
-              received2(std::move(_received2)),
-              will_send1(std::move(_will_send1)),
-              will_send2(std::move(_will_send2)) {
+        StubAccepted(std::vector<std::string>&& _received)
+            : elapsed(std::chrono::system_clock::duration::zero()),
+              received(std::move(_received)),
+              will_send(),
+              should_send(false) {
         }
     };
 
@@ -63,17 +63,36 @@ public:
             auto millis_elapsed = std::chrono::duration<double, std::milli>(elapsed).count();
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", millis_elapsed, 1000.0f / millis_elapsed);
 
-            ImGui::Text("Received s1: %s", stub_accepted.received1.c_str());
-            ImGui::Text("Received s2: %s", stub_accepted.received2.c_str());
+            for(auto& s : stub_accepted.received) {
+                ImGui::Text("Received s: %s", s.c_str());
+            }
 
-            ImGui::Text("About to send s1: %s", stub_accepted.will_send1.c_str());
-            ImGui::Text("About to send s2: %s", stub_accepted.will_send2.c_str());
-            ImGui::Text("before send: %.3fs", std::chrono::duration<double>(stub_accepted.before_send).count());
+            if (ImGui::Button("Send")) {
+                stub_accepted.should_send = true;
+            }
+            
+            if (ImGui::Button("Add Input")) {
+                stub_accepted.will_send.emplace_back(std::string());
+            }
+
+            for (size_t i = 0; i < stub_accepted.will_send.size(); ++i) {
+                // Unique label for each input field
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::InputText("##input", &stub_accepted.will_send[i]); // "##" prevents label display
+                ImGui::SameLine();
+                if (ImGui::Button("Remove")) {
+                    stub_accepted.will_send.erase(stub_accepted.will_send.begin() + i); // Remove the input field
+                    --i; // Adjust index due to removal
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::Text("elapsed: %.3fs", std::chrono::duration<double>(stub_accepted.elapsed).count());
 
             ImGui::Render();
             ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
 
-            stub_accepted.before_send -= elapsed;
+            stub_accepted.elapsed += elapsed;
         }}, state);
 
         return {};
@@ -84,24 +103,30 @@ public:
             for(Message message : read_message_queue) {
                 switch(message.type()) {
                     case MessageType::StubMessage: {
-                        std::string s1;
-                        std::string s2;
-                        message >> s2 >> s1;
-                        state = StubAccepted(std::chrono::seconds(10),
-                                             std::move(s1),
-                                             std::move(s2),
-                                             "To tell you I'm sorry for everything that I've done",
-                                             "But when I call, you never seem to be home");
+                        uint8_t number_of_strings;
+                        message >> number_of_strings;
+                        std::vector<std::string> strings;
+
+                        for(int i = 0; i < number_of_strings; i++) {
+                            std::string s;
+                            message >> s;
+                            strings.push_back(std::move(s));
+                        }
+
+                        state = StubAccepted(std::move(strings));
                         break;
                     }
                 }
             }
         }, [&](StubAccepted& stub_accepted) {
-            if(stub_accepted.before_send <= std::chrono::system_clock::duration::zero()) {
-
+            if(stub_accepted.should_send) {
                 Message message_back(MessageType::StubMessage);
 
-                message_back << stub_accepted.will_send1 << stub_accepted.will_send2;
+                for(auto s = stub_accepted.will_send.rbegin(); s != stub_accepted.will_send.rend(); s++) {
+                    message_back << *s;
+                }
+
+                message_back << static_cast<uint8_t>(stub_accepted.will_send.size());
 
                 write_message_queue.enqueue(std::move(message_back));
                 state = WaitingForStub();

@@ -10,7 +10,7 @@ use super::{reaction::Reaction, GameState};
 
 enum UserState {
     WaitingForStub,
-    StubAccepted(String, String, Duration, Reaction),
+    StubAccepted(Vec<String>, Duration, Reaction),
 }
 
 pub struct RunningGame {
@@ -26,8 +26,7 @@ impl RunningGame {
                     (
                         *user,
                         UserState::StubAccepted(
-                            String::from(""),
-                            String::from(""),
+                            Vec::new(),
                             Duration::ZERO,
                             Reaction::new_reacted(true),
                         ),
@@ -41,6 +40,7 @@ impl RunningGame {
         let mut stub_message = Message::new(MessageType::StubMessage);
         stub_message.push_string("Hello from the other siiiiiiiiiide!");
         stub_message.push_string("At least I can say that I've triiiiiiiiiiied!");
+        stub_message.push(&(2 as u8));
         stub_message
     }
 }
@@ -50,9 +50,11 @@ impl GameState for RunningGame {
         for (user, state) in self.user_to_user_state.iter_mut() {
             match state {
                 UserState::WaitingForStub => {}
-                UserState::StubAccepted(s1, s2, duration, reaction) => {
+                UserState::StubAccepted(strings, duration, reaction) => {
                     reaction.react_once(|| {
-                        println!("message from {user}: s1: {s1}, s2: {s2}");
+                        for s in strings.iter() {
+                            println!("message from {user}: sx: {s}");
+                        }
                     });
                     *duration += elapsed;
                 }
@@ -74,17 +76,13 @@ impl GameState for RunningGame {
                         for mut message in receiver.try_iter() {
                             match message.message_type() {
                                 MessageType::StubMessage => {
-                                    let s2 = message
-                                        .pop_string()
-                                        .ok_or(String::from("Can't pop string"))
-                                        .unwrap();
-                                    let s1 = message
-                                        .pop_string()
-                                        .ok_or(String::from("Can't pop string"))
-                                        .unwrap();
+                                    let number_of_strings: u8 = message.pop().unwrap();
+                                    let strings: Vec<String> = (0..number_of_strings)
+                                        .map(|_| message.pop_string().unwrap())
+                                        .collect();
+
                                     *state = UserState::StubAccepted(
-                                        s1,
-                                        s2,
+                                        strings,
                                         Duration::ZERO,
                                         Reaction::new(),
                                     );
@@ -94,7 +92,7 @@ impl GameState for RunningGame {
                         }
                     });
                 }
-                UserState::StubAccepted(_, _, duration, _) => {
+                UserState::StubAccepted(_, duration, _) => {
                     if *duration > Duration::from_secs(2) {
                         user_to_sender.get(user).map(|sender| {
                             sender.send(Self::create_stub_message()).unwrap();

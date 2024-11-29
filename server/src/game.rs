@@ -7,6 +7,7 @@ use state::GameState;
 
 use crate::Users;
 
+pub mod chat;
 pub mod state;
 
 pub struct Game {

@@ -13,6 +13,7 @@ pub enum MessageType {
     StubMessage = 7,
     GameAboutToStart = 8,
     GameStarting = 9,
+    ChatUpdate = 10,
 }
 
 impl From<u32> for MessageType {
@@ -27,11 +28,13 @@ impl From<u32> for MessageType {
             7 => MessageType::StubMessage,
             8 => MessageType::GameAboutToStart,
             9 => MessageType::GameStarting,
+            10 => MessageType::ChatUpdate,
             _ => panic!("Unknown MessageType value: {value}!"),
         }
     }
 }
 
+#[derive(Clone)]
 pub struct Message {
     message_type: MessageType,
     data: Vec<u8>,

@@ -4,6 +4,7 @@
 #include "ready_to_start.hpp"
 #include "reaction.hpp"
 #include "overloaded.hpp"
+#include "../chat.hpp"
 
 #include <imgui.h>
 #include <backends/imgui_impl_sdl2.h>
@@ -25,11 +26,13 @@ private:
         std::unordered_map<int32_t, bool> user_to_state;
         bool state_changed;
         bool is_ready;
+        Chat chat;
 
-        ConnectionAccepted(std::unordered_map<int32_t, bool>&& _user_to_state)
+        ConnectionAccepted(std::unordered_map<int32_t, bool>&& _user_to_state, Chat&& _chat)
             : user_to_state(std::move(_user_to_state)),
               state_changed(false),
-              is_ready(false) {
+              is_ready(false),
+              chat(std::move(_chat)) {
         }
     };
 
@@ -80,6 +83,8 @@ public:
                 ImGui::Checkbox(("##Checkbox" + std::to_string(pair.first)).c_str(), &is_checked);
                 ImGui::EndDisabled();
             }
+
+            connection_accepted.chat.render_chat(input_state.state_by_key(Key::ENTER));
             
             ImGui::Render();
             ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
@@ -115,7 +120,7 @@ public:
                             user_to_state[user] = is_ready != 0;
                         }
 
-                        state = ConnectionAccepted(std::move(user_to_state));
+                        state = ConnectionAccepted(std::move(user_to_state), Chat());
                         return;
                 }
             }
@@ -123,7 +128,7 @@ public:
             if(connection_accepted.state_changed) {
                 connection_accepted.state_changed = false;
                 Message ready_to_start(MessageType::ReadyToStartChanged);
-                ready_to_start << (uint8_t)connection_accepted.is_ready;
+                ready_to_start << static_cast<uint8_t>(connection_accepted.is_ready);
                 write_message_queue.enqueue(std::move(ready_to_start));
             }
             for(Message message: read_message_queue) {
@@ -145,11 +150,36 @@ public:
                         }
                         break;
                     }
+                    case MessageType::ChatUpdate: {
+                        uint8_t message_number;
+                        message >> message_number;
+                        for(int i = 0; i < message_number; i++) {
+                            int32_t user;
+                            message >> user;
+                            std::string chat_message;
+                            message >> chat_message;
+
+                            connection_accepted.chat.push_message(user, std::move(chat_message));
+                        }
+                        return;
+                    }
                     case MessageType::ReadyToStart: {
                         state = ReadyToStart(std::move(connection_accepted.user_to_state));
                         return;
                     }
                 }
+            }
+
+            if(connection_accepted.chat.get_not_sent_messages().size() > 0) {
+                Message chat_update_message(MessageType::ChatUpdate);
+                for (auto chat_message = connection_accepted.chat.get_not_sent_messages().rbegin(); chat_message != connection_accepted.chat.get_not_sent_messages().rend(); ++chat_message) {
+                    chat_update_message << *chat_message;
+                }
+                chat_update_message << static_cast<uint8_t>(connection_accepted.chat.get_not_sent_messages().size());
+
+                write_message_queue.enqueue(std::move(chat_update_message));
+
+                connection_accepted.chat.all_sent();
             }
         }, [&](ReadyToStart& ready_to_start) {
         }}, state);

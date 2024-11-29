@@ -16,6 +16,7 @@ enum MessageType {
     StubMessage = 7,
     GameAboutToStart = 8,
     GameStarting = 9,
+    ChatUpdate = 10,
 };
 
 class Message {
@@ -47,9 +48,9 @@ public:
             boost::asio::buffer(&std::get<0>(inputs), sizeof(std::get<0>(inputs))),
             boost::asio::buffer(&std::get<1>(inputs), sizeof(std::get<1>(inputs))),
             boost::asio::buffer(data.data(), data.size())
-            },[handler](const boost::system::error_code& error, std::size_t bytes_transferred) {
-                handler(error, bytes_transferred);
-            });
+        },[handler](const boost::system::error_code& error, std::size_t bytes_transferred) {
+            handler(error, bytes_transferred);
+        });
     }
 
     std::size_t write_to(boost::asio::ip::tcp::socket& socket) {     

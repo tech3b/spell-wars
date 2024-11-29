@@ -11,6 +11,7 @@ set(IMGUI_SRC
     "${CMAKE_SOURCE_DIR}/external/imgui/imgui_demo.cpp"
     "${CMAKE_SOURCE_DIR}/external/imgui/backends/imgui_impl_sdl2.cpp"
     "${CMAKE_SOURCE_DIR}/external/imgui/backends/imgui_impl_sdlrenderer2.cpp"
+    "${CMAKE_SOURCE_DIR}/external/imgui/misc/cpp/imgui_stdlib.cpp"
 )
 
 add_library(imgui STATIC ${IMGUI_SRC})
