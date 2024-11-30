@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::{collections::HashSet, time::Duration};
 
+use crate::game::chat::Chat;
 use crate::message::{Message, MessageType};
 
 use super::running::RunningGame;
@@ -16,13 +17,15 @@ enum OverallState {
 pub struct ReadyToStartGame {
     state: OverallState,
     users: HashSet<i32>,
+    chat: Chat,
 }
 
 impl ReadyToStartGame {
-    pub fn new(users: HashSet<i32>) -> Self {
+    pub fn new(users: HashSet<i32>, chat: Chat) -> Self {
         ReadyToStartGame {
             state: OverallState::SecondsLeft(10, Duration::ZERO, false),
             users,
+            chat,
         }
     }
 }
@@ -42,10 +45,10 @@ impl GameState for ReadyToStartGame {
             OverallState::Starting(sent) => {
                 if *sent {
                     println!("moving to RunningGame");
-                    return Some(Box::new(RunningGame::new(std::mem::replace(
-                        &mut self.users,
-                        HashSet::new(),
-                    ))));
+                    return Some(Box::new(RunningGame::new(
+                        std::mem::replace(&mut self.users, HashSet::new()),
+                        std::mem::replace(&mut self.chat, Chat::new()),
+                    )));
                 }
             }
         }

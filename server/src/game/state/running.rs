@@ -4,7 +4,10 @@ use std::{
     time::Duration,
 };
 
-use crate::message::{Message, MessageType};
+use crate::{
+    game::chat::Chat,
+    message::{Message, MessageType},
+};
 
 use super::{reaction::Reaction, GameState};
 
@@ -15,10 +18,11 @@ enum UserState {
 
 pub struct RunningGame {
     user_to_user_state: HashMap<i32, UserState>,
+    chat: Chat,
 }
 
 impl RunningGame {
-    pub fn new(users: HashSet<i32>) -> Self {
+    pub fn new(users: HashSet<i32>, chat: Chat) -> Self {
         RunningGame {
             user_to_user_state: users
                 .iter()
@@ -33,6 +37,7 @@ impl RunningGame {
                     )
                 })
                 .collect(),
+            chat,
         }
     }
 
@@ -87,12 +92,25 @@ impl GameState for RunningGame {
                                         Reaction::new(),
                                     );
                                 }
+                                MessageType::ChatUpdate => {
+                                    self.chat.append(*user, message);
+                                }
                                 _ => continue,
                             }
                         }
                     });
                 }
                 UserState::StubAccepted(_, duration, _) => {
+                    user_to_receiver.get(user).map(|receiver| {
+                        for message in receiver.try_iter() {
+                            match message.message_type() {
+                                MessageType::ChatUpdate => {
+                                    self.chat.append(*user, message);
+                                }
+                                _ => continue,
+                            }
+                        }
+                    });
                     if *duration > Duration::from_secs(2) {
                         user_to_sender.get(user).map(|sender| {
                             sender.send(Self::create_stub_message()).unwrap();
@@ -102,5 +120,11 @@ impl GameState for RunningGame {
                 }
             }
         }
+
+        self.chat.commit().map(|message| {
+            for (_, sender) in user_to_sender.iter() {
+                sender.send(message.clone()).unwrap();
+            }
+        });
     }
 }

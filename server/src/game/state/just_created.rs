@@ -114,10 +114,10 @@ impl GameState for JustCreatedGame {
             OverallState::AllReady(users, ready_sent) => {
                 if *ready_sent {
                     println!("moving to ReadyToStartGame");
-                    return Some(Box::new(ReadyToStartGame::new(std::mem::replace(
-                        users,
-                        HashSet::new(),
-                    ))));
+                    return Some(Box::new(ReadyToStartGame::new(
+                        std::mem::replace(users, HashSet::new()),
+                        std::mem::replace(&mut self.chat, Chat::new()),
+                    )));
                 }
             }
         }
@@ -174,11 +174,7 @@ impl GameState for JustCreatedGame {
                                         was_changed = true;
                                     }
                                     MessageType::ChatUpdate => {
-                                        let number_of_messages: u8 = message.pop().unwrap();
-                                        for _ in 0..number_of_messages {
-                                            let chat_message = message.pop_string().unwrap();
-                                            self.chat.append(*user, chat_message);
-                                        }
+                                        self.chat.append(*user, message);
                                     }
                                     _ => continue,
                                 }
@@ -207,9 +203,7 @@ impl GameState for JustCreatedGame {
                         user_to_sender,
                     );
 
-                    if !self.chat.messages().is_empty() {
-                        send_chat_state(&new_users, user_to_sender, &self.chat)
-                    }
+                    send_chat_state(&new_users, user_to_sender, &self.chat);
                 }
 
                 for user in new_users {
@@ -226,18 +220,10 @@ impl GameState for JustCreatedGame {
                     message_to_accepted_users(current_users, user_to_sender, update_message);
                 }
 
-                if self.chat.new_messages().len() > 0 {
-                    let mut chat_update_message = Message::new(MessageType::ChatUpdate);
-                    for (user, message) in self.chat.new_messages().iter().rev() {
-                        chat_update_message.push_string(message);
-                        chat_update_message.push(user);
-                    }
-                    chat_update_message.push(&(self.chat.new_messages().len() as u8));
+                self.chat.commit().map(|message| {
+                    message_to_accepted_users(current_users, user_to_sender, message);
+                });
 
-                    message_to_accepted_users(current_users, user_to_sender, chat_update_message);
-                }
-
-                self.chat.commit();
                 *final_call = FinalCall::Processed;
             }
             OverallState::AllReady(users, ready_sent) => {
@@ -315,15 +301,10 @@ fn send_chat_state(
     user_to_sender: &HashMap<i32, mpsc::Sender<Message>>,
     chat: &Chat,
 ) {
+    let chat_state = chat.whole_chat_state();
     for user in users_need_to_send_connection_accepted.iter() {
-        let mut chat_update_message = Message::new(MessageType::ChatUpdate);
-        for (user, message) in chat.messages().iter().rev() {
-            chat_update_message.push_string(message);
-            chat_update_message.push(user);
-        }
-        chat_update_message.push(&(chat.messages().len() as u8));
         user_to_sender.get(user).map(|sender| {
-            sender.send(chat_update_message).unwrap();
+            sender.send(chat_state.clone()).unwrap();
         });
     }
 }

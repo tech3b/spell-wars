@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_sdlrenderer2.h>
+#include "../chat.hpp"
 
 class ReadyToStartGame : public GameState {
 private:
@@ -21,9 +22,11 @@ private:
     };
 
     std::variant<WaitingForStart, Starting> state;
+    Chat chat;
 public:
-    ReadyToStartGame() :
-        state(WaitingForStart()) {
+    ReadyToStartGame(Chat&& _chat)
+        : state(WaitingForStart()),
+          chat(std::move(_chat)) {
     }
 
     virtual std::optional<std::unique_ptr<GameState>> elapsed(std::chrono::system_clock::duration& elapsed,
@@ -34,6 +37,15 @@ public:
             ImGui_ImplSDLRenderer2_NewFrame();
             ImGui_ImplSDL2_NewFrame();
             ImGui::NewFrame();
+
+            ImGuiIO& io = ImGui::GetIO();
+            float screen_width = io.DisplaySize.x;
+            float screen_height = io.DisplaySize.y;
+
+            ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(screen_width, screen_height), ImGuiCond_Always);
+
+            ImGui::Begin("main", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             
             auto millis_elapsed = std::chrono::duration<double, std::milli>(elapsed).count();
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", millis_elapsed, 1000.0f / millis_elapsed);
@@ -42,6 +54,8 @@ public:
             } else {
                 ImGui::Text("About to start: %d", waiting_for_start.seconds_before_start);
             }
+
+            ImGui::End();
             
             ImGui::Render();
             ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
@@ -49,7 +63,7 @@ public:
             return {};
         }, [&](Starting& starting) -> std::optional<std::unique_ptr<GameState>> {
             std::cout << "moving to RunningGame" << std::endl;
-            return std::make_optional(std::make_unique<RunningGame>());
+            return std::make_optional(std::make_unique<RunningGame>(std::move(chat)));
         }}, state);
     }
 

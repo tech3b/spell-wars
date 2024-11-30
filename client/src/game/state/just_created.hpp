@@ -38,8 +38,11 @@ private:
 
     struct ReadyToStart {
         std::unordered_map<int32_t, bool> user_to_state;
+        Chat chat;
 
-        ReadyToStart(std::unordered_map<int32_t, bool>&& _user_to_state) : user_to_state(std::move(_user_to_state)){
+        ReadyToStart(std::unordered_map<int32_t, bool>&& _user_to_state, Chat&& _chat)
+            : user_to_state(std::move(_user_to_state)),
+              chat(std::move(_chat)) {
         }
     };
 
@@ -66,7 +69,17 @@ public:
             ImGui_ImplSDLRenderer2_NewFrame();
             ImGui_ImplSDL2_NewFrame();
             ImGui::NewFrame();
+
+            ImGuiIO& io = ImGui::GetIO();
+            float screen_width = io.DisplaySize.x;
+            float screen_height = io.DisplaySize.y;
+
+            float main_window_height = 400;
+
+            ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(screen_width, main_window_height), ImGuiCond_Always);
             
+            ImGui::Begin("main", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             auto millis_elapsed = std::chrono::duration<double, std::milli>(elapsed).count();
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", millis_elapsed, 1000.0f / millis_elapsed);
             ImGui::Text("Me %d", this->server_user_number);
@@ -84,6 +97,14 @@ public:
                 ImGui::EndDisabled();
             }
 
+            ImGui::End();
+
+            float chat_height = screen_height - main_window_height;
+            float chat_pos_y = screen_height - chat_height;
+            
+            ImGui::SetNextWindowPos(ImVec2(0, chat_pos_y), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(screen_width, chat_height), ImGuiCond_Always);
+
             connection_accepted.chat.render_chat(input_state.state_by_key(Key::ENTER));
             
             ImGui::Render();
@@ -92,7 +113,7 @@ public:
             return {};
         }, [&](ReadyToStart& ready_to_start) -> std::optional<std::unique_ptr<GameState>> {
             std::cout << "Moving to ReadyToStartGame" << std::endl;
-            return std::make_unique<ReadyToStartGame>();
+            return std::make_unique<ReadyToStartGame>(std::move(ready_to_start.chat));
         }}, state);
     }
 
@@ -151,36 +172,18 @@ public:
                         break;
                     }
                     case MessageType::ChatUpdate: {
-                        uint8_t message_number;
-                        message >> message_number;
-                        for(int i = 0; i < message_number; i++) {
-                            int32_t user;
-                            message >> user;
-                            std::string chat_message;
-                            message >> chat_message;
-
-                            connection_accepted.chat.push_message(user, std::move(chat_message));
-                        }
-                        return;
+                        connection_accepted.chat.push_message(message);
+                        break;
                     }
                     case MessageType::ReadyToStart: {
-                        state = ReadyToStart(std::move(connection_accepted.user_to_state));
+                        state = ReadyToStart(std::move(connection_accepted.user_to_state), std::move(connection_accepted.chat));
                         return;
                     }
                 }
             }
 
-            if(connection_accepted.chat.get_not_sent_messages().size() > 0) {
-                Message chat_update_message(MessageType::ChatUpdate);
-                for (auto chat_message = connection_accepted.chat.get_not_sent_messages().rbegin(); chat_message != connection_accepted.chat.get_not_sent_messages().rend(); ++chat_message) {
-                    chat_update_message << *chat_message;
-                }
-                chat_update_message << static_cast<uint8_t>(connection_accepted.chat.get_not_sent_messages().size());
+            connection_accepted.chat.commit(write_message_queue);
 
-                write_message_queue.enqueue(std::move(chat_update_message));
-
-                connection_accepted.chat.all_sent();
-            }
         }, [&](ReadyToStart& ready_to_start) {
         }}, state);
     }
