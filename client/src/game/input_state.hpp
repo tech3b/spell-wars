@@ -19,6 +19,7 @@ enum Key
 class InputState {
 private:
     bool key_states[256];
+
 public:
     InputState() {
         for(int i = 0; i < 256; i++) {

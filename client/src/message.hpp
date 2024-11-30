@@ -1,22 +1,22 @@
 #pragma once
 
-#include <iostream>
-#include <vector>
-#include <cstdint>
-#include <tuple>
 #include <boost/asio.hpp>
+#include <cstdint>
+#include <iostream>
+#include <tuple>
+#include <vector>
 
 enum MessageType {
     ConnectionRequested = 1,
-    ConnectionAccepted = 2,
-    ConnectionRejected = 3,
-    UserStatusUpdate = 4,
+    ConnectionAccepted  = 2,
+    ConnectionRejected  = 3,
+    UserStatusUpdate    = 4,
     ReadyToStartChanged = 5,
-    ReadyToStart = 6,
-    StubMessage = 7,
-    GameAboutToStart = 8,
-    GameStarting = 9,
-    ChatUpdate = 10,
+    ReadyToStart        = 6,
+    StubMessage         = 7,
+    GameAboutToStart    = 8,
+    GameStarting        = 9,
+    ChatUpdate          = 10,
 };
 
 class Message {
@@ -25,46 +25,51 @@ private:
     std::vector<uint8_t> data;
 
 public:
-    Message(MessageType _messageType): messageType(_messageType) {
+    Message(MessageType _messageType)
+        : messageType(_messageType) {
     }
 
-    Message(MessageType _messageType, std::vector<uint8_t>&& _data) noexcept :
-        messageType(_messageType),
-        data(std::move(_data)) {
+    Message(MessageType _messageType, std::vector<uint8_t>&& _data) noexcept
+        : messageType(_messageType),
+          data(std::move(_data)) {
     }
-    
+
     Message(Message&& other) noexcept = default;
-    
+
     Message(const Message&) noexcept = delete;
 
     MessageType type() {
         return this->messageType;
     }
 
-    void write_async_to(boost::asio::ip::tcp::socket& socket, std::function<void(const boost::system::error_code&, std::size_t)> handler) {       
+    void write_async_to(boost::asio::ip::tcp::socket& socket,
+                        std::function<void(const boost::system::error_code&, std::size_t)> handler) {
         auto inputs = prepare_inputs();
 
-        boost::asio::async_write(socket, std::array<boost::asio::const_buffer, 3> {
-            boost::asio::buffer(&std::get<0>(inputs), sizeof(std::get<0>(inputs))),
-            boost::asio::buffer(&std::get<1>(inputs), sizeof(std::get<1>(inputs))),
-            boost::asio::buffer(data.data(), data.size())
-        },[handler](const boost::system::error_code& error, std::size_t bytes_transferred) {
+        boost::asio::async_write(socket,
+                                 std::array<boost::asio::const_buffer, 3> {boost::asio::buffer(&std::get<0>(inputs),
+                                                                                               sizeof(std::get<0>(inputs))),
+                                                                           boost::asio::buffer(&std::get<1>(inputs),
+                                                                                               sizeof(std::get<1>(inputs))),
+                                                                           boost::asio::buffer(data.data(), data.size())},
+                                 [handler](const boost::system::error_code& error, std::size_t bytes_transferred) {
             handler(error, bytes_transferred);
         });
     }
 
-    std::size_t write_to(boost::asio::ip::tcp::socket& socket) {     
+    std::size_t write_to(boost::asio::ip::tcp::socket& socket) {
         auto inputs = prepare_inputs();
 
-        return boost::asio::write(socket, std::array<boost::asio::const_buffer, 3> {
-            boost::asio::buffer(&std::get<0>(inputs), sizeof(std::get<0>(inputs))),
-            boost::asio::buffer(&std::get<1>(inputs), sizeof(std::get<1>(inputs))),
-            boost::asio::buffer(data.data(), data.size())
-        });
+        return boost::asio::write(socket,
+                                  std::array<boost::asio::const_buffer, 3> {boost::asio::buffer(&std::get<0>(inputs),
+                                                                                                sizeof(std::get<0>(inputs))),
+                                                                            boost::asio::buffer(&std::get<1>(inputs),
+                                                                                                sizeof(std::get<1>(inputs))),
+                                                                            boost::asio::buffer(data.data(), data.size())});
     }
 
     std::tuple<uint32_t, uint32_t> prepare_inputs() {
-        return { static_cast<uint32_t>(messageType), static_cast<uint32_t>(data.size()) };
+        return {static_cast<uint32_t>(messageType), static_cast<uint32_t>(data.size())};
     }
 
     friend Message& operator<<(Message& msg, const std::string& input) {
@@ -72,8 +77,8 @@ public:
         return msg << static_cast<uint32_t>(input.length());
     }
 
-    template<typename DataType>
-    friend Message& operator << (Message& msg, const DataType& data) {
+    template <typename DataType>
+    friend Message& operator<<(Message& msg, const DataType& data) {
         // Check that the type of the data being pushed is trivially copyable
         static_assert(std::is_standard_layout<DataType>::value, "Data is too complex to be pushed into vector");
 
@@ -102,8 +107,8 @@ public:
     }
 
     // Pulls any POD-like data form the message buffer
-    template<typename DataType>
-    friend Message& operator >> (Message& msg, DataType& data) {
+    template <typename DataType>
+    friend Message& operator>>(Message& msg, DataType& data) {
         // Check that the type of the data being pushed is trivially copyable
         static_assert(std::is_standard_layout<DataType>::value, "Data is too complex to be pulled from vector");
 

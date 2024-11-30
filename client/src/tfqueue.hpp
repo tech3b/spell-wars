@@ -1,8 +1,8 @@
 #pragma once
 
-#include <queue>
 #include <mutex>
 #include <optional>
+#include <queue>
 
 template <typename T>
 class TFQueue {
@@ -10,8 +10,9 @@ private:
     std::queue<std::optional<T>> queue;
     std::mutex mutex;
     std::condition_variable cv;
+
 public:
-    TFQueue() = default;
+    TFQueue()               = default;
     TFQueue(const TFQueue&) = delete;
 
     std::optional<T> dequeue() {
@@ -45,9 +46,13 @@ public:
 
     public:
         Iterator(std::queue<std::optional<T>>* q, std::unique_lock<std::mutex>&& l)
-            : queue(q), lock(std::move(l)) {}
+            : queue(q),
+              lock(std::move(l)) {
+        }
 
-        Iterator() : queue(nullptr) {}
+        Iterator()
+            : queue(nullptr) {
+        }
 
         T operator*() {
             T result = std::move(queue->front().value());
@@ -56,7 +61,7 @@ public:
         }
 
         Iterator& operator++() {
-            if (queue->empty() || !queue->front().has_value()) {
+            if(queue->empty() || !queue->front().has_value()) {
                 queue = nullptr;
             }
             return *this;
@@ -69,7 +74,7 @@ public:
 
     Iterator begin() {
         std::unique_lock<std::mutex> lock(mutex);
-        if (queue.empty() || !queue.front().has_value()) {
+        if(queue.empty() || !queue.front().has_value()) {
             return end();
         }
         return Iterator(&queue, std::move(lock));

@@ -4,11 +4,14 @@
 
 class Reaction {
     bool reacted;
+
 public:
-    Reaction() : reacted(false) {
+    Reaction()
+        : reacted(false) {
     }
 
-    Reaction(bool _reacted) : reacted(_reacted) {
+    Reaction(bool _reacted)
+        : reacted(_reacted) {
     }
 
     void react_once(const std::function<void()>& f) {
