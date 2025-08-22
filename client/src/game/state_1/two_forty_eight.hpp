@@ -173,40 +173,24 @@ public:
     TwoFortyEight(TFEGame&& tfeGame)
         : tfeGame(std::move(tfeGame)) {
         this->tfeGame.spawnNew();
-        // this->tfeGame.getBoard()[0][0] = 2;
-        // this->tfeGame.getBoard()[0][1] = 4;
-        // this->tfeGame.getBoard()[0][2] = 8;
-        // this->tfeGame.getBoard()[0][3] = 16;
-        // this->tfeGame.getBoard()[1][3] = 32;
-        // this->tfeGame.getBoard()[1][2] = 64;
-        // this->tfeGame.getBoard()[1][1] = 128;
-        // this->tfeGame.getBoard()[1][0] = 256;
-        // this->tfeGame.getBoard()[2][0] = 512;
-        // this->tfeGame.getBoard()[2][1] = 1024;
-        // this->tfeGame.getBoard()[2][2] = 2048;
-        // this->tfeGame.getBoard()[2][3] = 4096;
-        // this->tfeGame.getBoard()[3][3] = 8192;
-        // this->tfeGame.getBoard()[3][2] = 16384;
-        // this->tfeGame.getBoard()[3][1] = 32768;
-        // this->tfeGame.getBoard()[3][0] = 32768;
 
         tileColors = {
-            {0,      IM_COL32(200, 200, 200, 255)},   // gray
-            {2,      IM_COL32(238, 228, 218, 255)},   // beige
-            {4,      IM_COL32(237, 224, 200, 255)},   // light beige
-            {8,      IM_COL32(255, 182, 193, 255)},   // pink
-            {16,     IM_COL32(135, 206, 250, 255)},   // light sky blue
-            {32,     IM_COL32(144, 238, 144, 255)},   // light green
-            {64,     IM_COL32(255, 165, 0, 255)},     // orange
-            {128,    IM_COL32(186, 85, 211, 255)},    // medium orchid (purple)
-            {256,    IM_COL32(255, 215, 0, 255)},     // gold
-            {512,    IM_COL32(70,  130, 180, 255)},   // steel blue
-            {1024,   IM_COL32(60,  179, 113, 255)},   // medium sea green
-            {2048,   IM_COL32(220, 20,  60, 255)},    // crimson
-            {4096,   IM_COL32(123, 104, 238, 255)},   // medium slate blue
-            {8192,   IM_COL32(255, 99,  71, 255)},    // tomato red
-            {16384,  IM_COL32(0,   191, 255, 255)},   // deep sky blue
-            {32768,  IM_COL32(199, 21,  133, 255)},   // medium violet red
+            {0, IM_COL32(200, 200, 200, 255)},     // gray
+            {2, IM_COL32(238, 228, 218, 255)},     // beige
+            {4, IM_COL32(237, 224, 200, 255)},     // light beige
+            {8, IM_COL32(255, 182, 193, 255)},     // pink
+            {16, IM_COL32(135, 206, 250, 255)},    // light sky blue
+            {32, IM_COL32(144, 238, 144, 255)},    // light green
+            {64, IM_COL32(255, 165, 0, 255)},      // orange
+            {128, IM_COL32(186, 85, 211, 255)},    // medium orchid (purple)
+            {256, IM_COL32(255, 215, 0, 255)},     // gold
+            {512, IM_COL32(70, 130, 180, 255)},    // steel blue
+            {1024, IM_COL32(60, 179, 113, 255)},   // medium sea green
+            {2048, IM_COL32(220, 20, 60, 255)},    // crimson
+            {4096, IM_COL32(123, 104, 238, 255)},  // medium slate blue
+            {8192, IM_COL32(255, 99, 71, 255)},    // tomato red
+            {16384, IM_COL32(0, 191, 255, 255)},   // deep sky blue
+            {32768, IM_COL32(199, 21, 133, 255)},  // medium violet red
         };
     }
 
@@ -283,7 +267,7 @@ public:
                 ImVec2 tileMax(tileMin.x + tileSize, tileMin.y + tileSize);
 
                 int value = tfeGame.getBoard()[y][x];  // your game board
-                
+
                 ImU32 col = tileColors[value];
 
                 // Draw tile rectangle
