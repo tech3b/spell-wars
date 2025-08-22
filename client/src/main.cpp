@@ -17,6 +17,7 @@
 #include "game.hpp"
 #include "game/input_state.hpp"
 #include "game/state/just_created.hpp"
+#include "game/state_1/two_forty_eight.hpp"
 #include "message.hpp"
 #include "tfqueue.hpp"
 
@@ -88,6 +89,11 @@ int main(int argc, char* argv[]) {
     key_map[SDL_Scancode::SDL_SCANCODE_8] = Key::N8;
     key_map[SDL_Scancode::SDL_SCANCODE_9] = Key::N9;
 
+    key_map[SDL_Scancode::SDL_SCANCODE_UP] = Key::UP;
+    key_map[SDL_Scancode::SDL_SCANCODE_DOWN] = Key::DOWN;
+    key_map[SDL_Scancode::SDL_SCANCODE_LEFT] = Key::LEFT;
+    key_map[SDL_Scancode::SDL_SCANCODE_RIGHT] = Key::RIGHT;
+
     key_map[SDL_Scancode::SDL_SCANCODE_RETURN] = Key::ENTER;
 
     if(SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -123,25 +129,31 @@ int main(int argc, char* argv[]) {
     const int serverPort       = 10101;        // Change to your target port
 
     try {
-        boost::asio::io_context io_context;
+        // boost::asio::io_context io_context;
 
-        boost::asio::ip::tcp::resolver resolver(io_context);
-        auto endpoints = resolver.resolve(serverIP, std::to_string(serverPort));
+        // boost::asio::ip::tcp::resolver resolver(io_context);
+        // auto endpoints = resolver.resolve(serverIP, std::to_string(serverPort));
 
-        auto socket = boost::asio::ip::tcp::socket(io_context);
+        // auto socket = boost::asio::ip::tcp::socket(io_context);
 
-        boost::asio::connect(socket, endpoints);
+        // boost::asio::connect(socket, endpoints);
 
-        auto socket_ptr = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
+        // auto socket_ptr = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
-        auto init_result = init_game(socket_ptr, renderer);
+        // auto init_result = init_game(socket_ptr, renderer);
 
-        game_loop(rate, std::get<2>(init_result), key_map, window, io, renderer);
+        // game_loop(rate, std::get<2>(init_result), key_map, window, io, renderer);
 
-        socket_ptr->close();
+        std::random_device rd;
 
-        std::get<0>(init_result).join();
-        std::get<1>(init_result).join();
+        Game game(std::make_unique<TwoFortyEight>(TFEGame(std::mt19937(rd()))), nullptr, nullptr, nullptr);
+
+        game_loop(rate, game, key_map, window, io, renderer);
+
+        // socket_ptr->close();
+
+        // std::get<0>(init_result).join();
+        // std::get<1>(init_result).join();
     } catch(const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
@@ -206,8 +218,8 @@ void game_loop(std::chrono::duration<double> rate,
                SDL_Window* window,
                ImGuiIO& io,
                SDL_Renderer* renderer) {
-    auto start    = std::chrono::system_clock::now();
-    auto start_io = start;
+    auto start = std::chrono::system_clock::now();
+    // auto start_io = start;
 
     InputState inputState;
     bool running = true;
@@ -238,20 +250,20 @@ void game_loop(std::chrono::duration<double> rate,
 
         auto new_start = std::chrono::system_clock::now();
 
-        auto elapsed    = new_start - start;
-        auto elapsed_io = new_start - start_io;
+        auto elapsed = new_start - start;
+        // auto elapsed_io = new_start - start_io;
 
         game.elapsed(elapsed, inputState, renderer);
 
         SDL_RenderPresent(renderer);
 
-        if(elapsed_io > rate) {
-            if(game.is_lost_connection()) {
-                break;
-            }
-            game.io_updates();
-            start_io = new_start;
-        }
+        // if(elapsed_io > rate) {
+        //     if(game.is_lost_connection()) {
+        //         break;
+        //     }
+        //     game.io_updates();
+        //     start_io = new_start;
+        // }
         start = new_start;
     }
 }

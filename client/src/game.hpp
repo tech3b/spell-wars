@@ -17,9 +17,9 @@ private:
 
 public:
     Game(std::unique_ptr<GameState>&& _game_state,
-         std::shared_ptr<TFQueue<Message>>& _write_message_queue,
-         std::shared_ptr<TFQueue<Message>>& _read_message_queue,
-         std::shared_ptr<std::atomic_flag>& _lost_connection)
+         const std::shared_ptr<TFQueue<Message>>& _write_message_queue,
+         const std::shared_ptr<TFQueue<Message>>& _read_message_queue,
+         const std::shared_ptr<std::atomic_flag>& _lost_connection)
         : game_state(std::move(_game_state)),
           write_message_queue(_write_message_queue),
           read_message_queue(_read_message_queue),
